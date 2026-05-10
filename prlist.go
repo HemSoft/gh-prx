@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"text/tabwriter"
 	"time"
 
 	gh "github.com/cli/go-gh/v2"
 	"github.com/cli/go-gh/v2/pkg/repository"
+	"github.com/cli/go-gh/v2/pkg/term"
+	"github.com/muesli/termenv"
 )
 
 const jsonFields = "number,title,author,state,isDraft,reviewDecision,statusCheckRollup,updatedAt,headRefName,baseRefName,url"
@@ -78,6 +79,92 @@ type displayPullRequest struct {
 	Branch  string `json:"branch"`
 	Updated string `json:"updated"`
 	URL     string `json:"url"`
+}
+
+type tableCell struct {
+	text   string // plain text for width calculation
+	styled string // styled text for display (may contain ANSI codes)
+}
+
+type tableStyler struct {
+	output *termenv.Output
+}
+
+func newTableStyler(w io.Writer, colorEnabled bool) tableStyler {
+	profile := termenv.Ascii
+	if colorEnabled {
+		profile = termenv.ANSI
+	}
+	output := termenv.NewOutput(w, termenv.WithProfile(profile))
+	return tableStyler{output: output}
+}
+
+func (s tableStyler) colored(text string, color termenv.ANSIColor) tableCell {
+	return tableCell{
+		text:   text,
+		styled: s.output.String(text).Foreground(color).String(),
+	}
+}
+
+func (s tableStyler) dim(text string) tableCell {
+	return tableCell{
+		text:   text,
+		styled: s.output.String(text).Faint().String(),
+	}
+}
+
+func (s tableStyler) plain(text string) tableCell {
+	return tableCell{text: text, styled: text}
+}
+
+func (s tableStyler) numberCell(number int) tableCell {
+	text := fmt.Sprintf("#%d", number)
+	return s.colored(text, termenv.ANSIGreen)
+}
+
+func (s tableStyler) stateCell(state string) tableCell {
+	switch state {
+	case "open":
+		return s.colored(state, termenv.ANSIGreen)
+	case "draft":
+		return s.colored(state, termenv.ANSIYellow)
+	case "closed":
+		return s.colored(state, termenv.ANSIRed)
+	case "merged":
+		return s.colored(state, termenv.ANSIMagenta)
+	default:
+		return s.plain(state)
+	}
+}
+
+func (s tableStyler) reviewCell(review string) tableCell {
+	switch review {
+	case "approved":
+		return s.colored(review, termenv.ANSIGreen)
+	case "changes":
+		return s.colored(review, termenv.ANSIRed)
+	case "review":
+		return s.colored(review, termenv.ANSIYellow)
+	default:
+		return s.plain(review)
+	}
+}
+
+func (s tableStyler) checksCell(checks string) tableCell {
+	switch checks {
+	case "pass":
+		return s.colored(checks, termenv.ANSIGreen)
+	case "fail":
+		return s.colored(checks, termenv.ANSIRed)
+	case "pending":
+		return s.colored(checks, termenv.ANSIYellow)
+	default:
+		return s.plain(checks)
+	}
+}
+
+func (s tableStyler) branchCell(branch string) tableCell {
+	return s.colored(branch, termenv.ANSICyan)
 }
 
 func defaultListOptions() listOptions {
@@ -193,6 +280,11 @@ func buildDisplayPullRequest(pullRequest pullRequest, now time.Time) displayPull
 }
 
 func renderTable(stdout io.Writer, options listOptions, pullRequests []displayPullRequest) error {
+	colorEnabled := term.FromEnv().IsColorEnabled()
+	return renderTableWithStyle(stdout, options, pullRequests, colorEnabled)
+}
+
+func renderTableWithStyle(stdout io.Writer, options listOptions, pullRequests []displayPullRequest, colorEnabled bool) error {
 	if len(pullRequests) == 0 {
 		fmt.Fprintln(stdout, "No pull requests found.")
 		return nil
@@ -202,24 +294,59 @@ func renderTable(stdout io.Writer, options listOptions, pullRequests []displayPu
 		fmt.Fprintf(stdout, "Pull requests for %s\n\n", repoLabel)
 	}
 
-	writer := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(writer, "#\tTitle\tAuthor\tState\tReview\tChecks\tBranch\tUpdated")
-	for _, pullRequest := range pullRequests {
-		fmt.Fprintf(
-			writer,
-			"#%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			pullRequest.Number,
-			pullRequest.Title,
-			pullRequest.Author,
-			pullRequest.State,
-			pullRequest.Review,
-			pullRequest.Checks,
-			pullRequest.Branch,
-			pullRequest.Updated,
-		)
+	styler := newTableStyler(stdout, colorEnabled)
+
+	headerLabels := []string{"#", "Title", "Author", "State", "Review", "Checks", "Branch", "Updated"}
+	headers := make([]tableCell, len(headerLabels))
+	for i, label := range headerLabels {
+		headers[i] = styler.dim(label)
 	}
 
-	return writer.Flush()
+	rows := make([][]tableCell, len(pullRequests))
+	for i, pr := range pullRequests {
+		rows[i] = []tableCell{
+			styler.numberCell(pr.Number),
+			styler.plain(pr.Title),
+			styler.plain(pr.Author),
+			styler.stateCell(pr.State),
+			styler.reviewCell(pr.Review),
+			styler.checksCell(pr.Checks),
+			styler.branchCell(pr.Branch),
+			styler.dim(pr.Updated),
+		}
+	}
+
+	colWidths := make([]int, len(headers))
+	for i, h := range headers {
+		if len(h.text) > colWidths[i] {
+			colWidths[i] = len(h.text)
+		}
+	}
+	for _, row := range rows {
+		for i, cell := range row {
+			if len(cell.text) > colWidths[i] {
+				colWidths[i] = len(cell.text)
+			}
+		}
+	}
+
+	writeRow(stdout, headers, colWidths)
+	for _, row := range rows {
+		writeRow(stdout, row, colWidths)
+	}
+
+	return nil
+}
+
+func writeRow(w io.Writer, cells []tableCell, widths []int) {
+	for i, cell := range cells {
+		fmt.Fprint(w, cell.styled)
+		if i < len(cells)-1 {
+			padding := widths[i] - len(cell.text) + 2
+			fmt.Fprint(w, strings.Repeat(" ", padding))
+		}
+	}
+	fmt.Fprintln(w)
 }
 
 func resolveRepoLabel(repoOverride string) string {

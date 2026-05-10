@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -111,5 +113,89 @@ func TestFormatRelativeTime(t *testing.T) {
 				t.Fatalf("expected %q, got %q", testCase.expected, got)
 			}
 		})
+	}
+}
+
+func TestRenderTableNoColor(t *testing.T) {
+	var buf bytes.Buffer
+	prs := []displayPullRequest{
+		{Number: 42, Title: "My PR", Author: "user", State: "open", Review: "approved", Checks: "pass", Branch: "feat -> main", Updated: "2h"},
+	}
+	err := renderTableWithStyle(&buf, listOptions{}, prs, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := buf.String()
+	if strings.Contains(output, "\x1b[") {
+		t.Fatal("expected no ANSI escape codes when color is disabled")
+	}
+	if !strings.Contains(output, "#42") {
+		t.Fatal("expected PR number in output")
+	}
+	if !strings.Contains(output, "My PR") {
+		t.Fatal("expected title in output")
+	}
+	if !strings.Contains(output, "approved") {
+		t.Fatal("expected review status in output")
+	}
+}
+
+func TestRenderTableWithColor(t *testing.T) {
+	var buf bytes.Buffer
+	prs := []displayPullRequest{
+		{Number: 7, Title: "Add colors", Author: "dev", State: "open", Review: "review", Checks: "pending", Branch: "color -> main", Updated: "5m"},
+	}
+	err := renderTableWithStyle(&buf, listOptions{}, prs, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := buf.String()
+	if !strings.Contains(output, "\x1b[") {
+		t.Fatal("expected ANSI escape codes when color is enabled")
+	}
+	if !strings.Contains(output, "#7") {
+		t.Fatal("expected PR number in output")
+	}
+}
+
+func TestRenderTableAlignment(t *testing.T) {
+	var buf bytes.Buffer
+	prs := []displayPullRequest{
+		{Number: 1, Title: "Short", Author: "a", State: "open", Review: "-", Checks: "-", Branch: "x -> main", Updated: "1h"},
+		{Number: 999, Title: "Longer title here", Author: "longuser", State: "merged", Review: "approved", Checks: "pass", Branch: "feature/long -> main", Updated: "30d"},
+	}
+	err := renderTableWithStyle(&buf, listOptions{}, prs, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 lines (header + 2 rows), got %d: %v", len(lines), lines)
+	}
+
+	// Verify header labels are present
+	if !strings.Contains(lines[0], "Title") || !strings.Contains(lines[0], "Branch") {
+		t.Fatal("expected header labels")
+	}
+
+	// Verify columns are aligned: the "Title" column should start at the same
+	// position in header and data rows
+	headerTitleIdx := strings.Index(lines[0], "Title")
+	row1TitleIdx := strings.Index(lines[1], "Short")
+	row2TitleIdx := strings.Index(lines[2], "Longer")
+	if headerTitleIdx != row1TitleIdx || headerTitleIdx != row2TitleIdx {
+		t.Fatalf("Title column misaligned: header=%d row1=%d row2=%d", headerTitleIdx, row1TitleIdx, row2TitleIdx)
+	}
+}
+
+func TestRenderTableEmpty(t *testing.T) {
+	var buf bytes.Buffer
+	err := renderTableWithStyle(&buf, listOptions{}, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "No pull requests found") {
+		t.Fatal("expected empty message")
 	}
 }
