@@ -337,6 +337,11 @@ func buildDisplayPullRequest(pullRequest pullRequest, now time.Time) displayPull
 }
 
 func renderTable(stdout io.Writer, options listOptions, pullRequests []displayPullRequest) error {
+	if len(pullRequests) > 0 {
+		if repoLabel := resolveRepoLabel(options.repo); repoLabel != "" {
+			fmt.Fprintf(stdout, "Pull requests for %s\n\n", repoLabel)
+		}
+	}
 	colorEnabled := term.FromEnv().IsColorEnabled()
 	return renderTableWithStyle(stdout, options, pullRequests, colorEnabled)
 }
@@ -345,10 +350,6 @@ func renderTableWithStyle(stdout io.Writer, options listOptions, pullRequests []
 	if len(pullRequests) == 0 {
 		fmt.Fprintln(stdout, "No pull requests found.")
 		return nil
-	}
-
-	if repoLabel := resolveRepoLabel(options.repo); repoLabel != "" {
-		fmt.Fprintf(stdout, "Pull requests for %s\n\n", repoLabel)
 	}
 
 	styler := newTableStyler(stdout, colorEnabled)
@@ -413,12 +414,11 @@ func resolveRepoLabel(repoOverride string) string {
 		return repoOverride
 	}
 
-	repo, err := repository.Current()
+	owner, name, err := resolveRepo("")
 	if err != nil {
 		return ""
 	}
-
-	return fmt.Sprintf("%s/%s", repo.Owner, repo.Name)
+	return fmt.Sprintf("%s/%s", owner, name)
 }
 
 func normalizeState(state string, isDraft bool) string {
@@ -562,10 +562,28 @@ func resolveRepo(repoOverride string) (string, string, error) {
 	}
 
 	repo, err := repository.Current()
-	if err != nil {
-		return "", "", err
+	if err == nil {
+		return repo.Owner, repo.Name, nil
 	}
-	return repo.Owner, repo.Name, nil
+
+	// Fall back to gh repo view for SSH aliases and non-standard remotes
+	stdout, _, execErr := gh.Exec("repo", "view", "--json", "owner,name")
+	if execErr != nil {
+		return "", "", fmt.Errorf("repo resolution failed: %w; fallback: %v", err, execErr)
+	}
+	var info struct {
+		Name  string `json:"name"`
+		Owner struct {
+			Login string `json:"login"`
+		} `json:"owner"`
+	}
+	if parseErr := json.Unmarshal(stdout.Bytes(), &info); parseErr != nil {
+		return "", "", parseErr
+	}
+	if info.Owner.Login == "" || info.Name == "" {
+		return "", "", fmt.Errorf("could not resolve repo from gh repo view")
+	}
+	return info.Owner.Login, info.Name, nil
 }
 
 func fetchReviewThreads(owner, name string, prNumbers []int) (map[int]reviewThreadInfo, error) {
