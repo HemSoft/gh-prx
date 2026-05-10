@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"strings"
 	"time"
 
@@ -71,6 +72,8 @@ type review struct {
 // CheckRun items use Status+Conclusion; StatusContext items use State.
 type checkItem struct {
 	Typename   string `json:"__typename"`
+	Name       string `json:"name"`    // CheckRun name
+	Context    string `json:"context"` // StatusContext context
 	Status     string `json:"status"`
 	Conclusion string `json:"conclusion"`
 	State      string `json:"state"`
@@ -247,7 +250,9 @@ func executeList(options listOptions, stdout io.Writer) error {
 	// Fetch supplemental PR data via GraphQL (best-effort)
 	supplemental := make(map[int]prSupplementalInfo)
 	supplementalFailed := false
+	var repoOwner, repoName string
 	if owner, name, err := resolveRepo(options.repo); err == nil {
+		repoOwner, repoName = owner, name
 		numbers := make([]int, len(pullRequests))
 		for i, pr := range pullRequests {
 			numbers[i] = pr.Number
@@ -259,6 +264,20 @@ func executeList(options listOptions, stdout io.Writer) error {
 		}
 	} else {
 		supplementalFailed = true
+	}
+
+	// Fetch required check contexts per base branch (best-effort)
+	requiredByBranch := make(map[string]map[string]bool)
+	if repoOwner != "" {
+		bases := make(map[string]bool)
+		for _, pr := range pullRequests {
+			bases[pr.BaseRefName] = true
+		}
+		for base := range bases {
+			if ctx := fetchRequiredCheckContexts(repoOwner, repoName, base); ctx != nil {
+				requiredByBranch[base] = ctx
+			}
+		}
 	}
 
 	for _, pullRequest := range pullRequests {
@@ -273,8 +292,17 @@ func executeList(options listOptions, stdout io.Writer) error {
 			if dp.AIReview == "" {
 				dp.AIReview = "-"
 			}
-			if info.ChecksOverride != "" {
-				dp.Checks = info.ChecksOverride
+		}
+		// Downgrade checks from "pass" to "pending" if required contexts are missing
+		if dp.Checks == "pass" {
+			if required, ok := requiredByBranch[pullRequest.BaseRefName]; ok {
+				reported := extractReportedContexts(pullRequest.StatusCheckRollup)
+				for ctx := range required {
+					if !reported[ctx] {
+						dp.Checks = "pending"
+						break
+					}
+				}
 			}
 		}
 		rendered = append(rendered, dp)
@@ -573,9 +601,8 @@ type reviewThreadInfo struct {
 }
 
 type prSupplementalInfo struct {
-	Threads        reviewThreadInfo
-	AIReview       string
-	ChecksOverride string // aggregate commit status from GraphQL (includes expected checks)
+	Threads  reviewThreadInfo
+	AIReview string
 }
 
 // aiReviewNode holds the fields needed to detect bot reviewer status.
@@ -639,19 +666,58 @@ func detectAIReview(nodes []aiReviewNode) string {
 	return "-"
 }
 
-// normalizeGraphQLCheckState maps the aggregate StatusCheckRollup.state
-// (which includes branch-protection-expected checks) to display values.
-func normalizeGraphQLCheckState(state string) string {
-	switch strings.ToUpper(state) {
-	case "SUCCESS":
-		return "pass"
-	case "FAILURE", "ERROR":
-		return "fail"
-	case "PENDING", "EXPECTED":
-		return "pending"
-	default:
-		return ""
+// extractReportedContexts collects the context/check names from statusCheckRollup items.
+func extractReportedContexts(items []checkItem) map[string]bool {
+	contexts := make(map[string]bool)
+	for _, item := range items {
+		switch item.Typename {
+		case "CheckRun":
+			if item.Name != "" {
+				contexts[item.Name] = true
+			}
+		case "StatusContext":
+			if item.Context != "" {
+				contexts[item.Context] = true
+			}
+		}
 	}
+	return contexts
+}
+
+// fetchRequiredCheckContexts returns the set of required status check context
+// names for a branch, derived from repository rulesets. Best-effort: returns
+// nil on error so callers fall back to per-item normalization only.
+func fetchRequiredCheckContexts(owner, name, branch string) map[string]bool {
+	endpoint := fmt.Sprintf("repos/%s/%s/rules/branches/%s", owner, name, url.PathEscape(branch))
+	stdout, _, err := gh.Exec("api", endpoint)
+	if err != nil {
+		return nil
+	}
+	var rules []struct {
+		Type       string `json:"type"`
+		Parameters struct {
+			RequiredStatusChecks []struct {
+				Context string `json:"context"`
+			} `json:"required_status_checks"`
+		} `json:"parameters"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &rules); err != nil {
+		return nil
+	}
+	contexts := make(map[string]bool)
+	for _, rule := range rules {
+		if rule.Type == "required_status_checks" {
+			for _, check := range rule.Parameters.RequiredStatusChecks {
+				if check.Context != "" {
+					contexts[check.Context] = true
+				}
+			}
+		}
+	}
+	if len(contexts) == 0 {
+		return nil
+	}
+	return contexts
 }
 
 func resolveRepo(repoOverride string) (string, string, error) {
@@ -696,7 +762,7 @@ func fetchPRSupplemental(owner, name string, prNumbers []int) (map[int]prSupplem
 	var queryParts []string
 	for _, num := range prNumbers {
 		queryParts = append(queryParts, fmt.Sprintf(
-			`pr%d: pullRequest(number: %d) { number reviewThreads(first: 100) { totalCount nodes { isResolved } } latestReviews(first: 50) { nodes { state author { login } comments { totalCount } } } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } }`,
+			`pr%d: pullRequest(number: %d) { number reviewThreads(first: 100) { totalCount nodes { isResolved } } latestReviews(first: 50) { nodes { state author { login } comments { totalCount } } } }`,
 			num, num,
 		))
 	}
@@ -741,15 +807,6 @@ func fetchPRSupplemental(owner, name string, prNumbers []int) (map[int]prSupplem
 					} `json:"comments"`
 				} `json:"nodes"`
 			} `json:"latestReviews"`
-			Commits struct {
-				Nodes []struct {
-					Commit struct {
-						StatusCheckRollup struct {
-							State string `json:"state"`
-						} `json:"statusCheckRollup"`
-					} `json:"commit"`
-				} `json:"nodes"`
-			} `json:"commits"`
 		}
 		if err := json.Unmarshal(raw, &prData); err != nil {
 			continue
@@ -771,20 +828,12 @@ func fetchPRSupplemental(owner, name string, prNumbers []int) (map[int]prSupplem
 			})
 		}
 
-		checksOverride := ""
-		if len(prData.Commits.Nodes) > 0 {
-			checksOverride = normalizeGraphQLCheckState(
-				prData.Commits.Nodes[0].Commit.StatusCheckRollup.State,
-			)
-		}
-
 		result[prData.Number] = prSupplementalInfo{
 			Threads: reviewThreadInfo{
 				Total:    prData.ReviewThreads.TotalCount,
 				Resolved: resolved,
 			},
-			AIReview:       detectAIReview(aiNodes),
-			ChecksOverride: checksOverride,
+			AIReview: detectAIReview(aiNodes),
 		}
 	}
 

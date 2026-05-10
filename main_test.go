@@ -283,25 +283,28 @@ func TestIsAIReviewer(t *testing.T) {
 	}
 }
 
-func TestNormalizeGraphQLCheckState(t *testing.T) {
-	tests := []struct {
-		state string
-		want  string
-	}{
-		{"SUCCESS", "pass"},
-		{"FAILURE", "fail"},
-		{"ERROR", "fail"},
-		{"PENDING", "pending"},
-		{"EXPECTED", "pending"},
-		{"", ""},
-		{"UNKNOWN", ""},
+func TestExtractReportedContexts(t *testing.T) {
+	items := []checkItem{
+		{Typename: "CheckRun", Name: "SonarCloud Code Analysis", Status: "COMPLETED", Conclusion: "SUCCESS"},
+		{Typename: "StatusContext", Context: "usergroups-api-pr", State: "SUCCESS"},
+		{Typename: "CheckRun", Name: "", Status: "COMPLETED", Conclusion: "SUCCESS"}, // empty name ignored
 	}
-	for _, tc := range tests {
-		t.Run(tc.state, func(t *testing.T) {
-			if got := normalizeGraphQLCheckState(tc.state); got != tc.want {
-				t.Fatalf("expected %q, got %q", tc.want, got)
-			}
-		})
+	got := extractReportedContexts(items)
+	if !got["SonarCloud Code Analysis"] {
+		t.Error("expected SonarCloud Code Analysis")
+	}
+	if !got["usergroups-api-pr"] {
+		t.Error("expected usergroups-api-pr")
+	}
+	if len(got) != 2 {
+		t.Errorf("expected 2 contexts, got %d", len(got))
+	}
+}
+
+func TestExtractReportedContextsEmpty(t *testing.T) {
+	got := extractReportedContexts(nil)
+	if len(got) != 0 {
+		t.Errorf("expected empty, got %d", len(got))
 	}
 }
 
