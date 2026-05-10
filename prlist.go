@@ -127,9 +127,13 @@ func (s tableStyler) plain(text string) tableCell {
 	return tableCell{text: text, styled: text}
 }
 
-func (s tableStyler) numberCell(number int) tableCell {
+func (s tableStyler) numberCell(number int, url string) tableCell {
 	text := fmt.Sprintf("#%d", number)
-	return s.colored(text, termenv.ANSIGreen)
+	styled := s.output.String(text).Foreground(s.output.Color(termenv.ANSIGreen.String())).String()
+	if url != "" {
+		styled = fmt.Sprintf("\x1b]8;;%s\x1b\\%s\x1b]8;;\x1b\\", url, styled)
+	}
+	return tableCell{text: text, styled: styled}
 }
 
 func (s tableStyler) stateCell(state string) tableCell {
@@ -385,7 +389,7 @@ func renderTableWithStyle(stdout io.Writer, options listOptions, pullRequests []
 	rows := make([][]tableCell, len(pullRequests))
 	for i, pr := range pullRequests {
 		rows[i] = []tableCell{
-			styler.numberCell(pr.Number),
+			styler.numberCell(pr.Number, pr.URL),
 			styler.plain(pr.Title),
 			styler.plain(pr.Author),
 			styler.stateCell(pr.State),
