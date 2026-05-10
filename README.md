@@ -1,88 +1,106 @@
 # gh-prx
 
-`gh-prx` is a Go-based GitHub CLI extension that adds a richer pull request list view with:
+A GitHub CLI extension that supercharges `gh pr list` with a richer, color-coded table view — approvals, AI reviewer status, check details, comment resolution, and clickable PR links.
 
-- cleaner table output
-- derived review and checks columns
-- branch context in a single column
-- optional JSON output for scripting
+```
+#    Title                                             Author         State  Review    AI    Appv  Checks   Cmts   Branch                 Updated
+#12  RPLAT-18678: Migrate user-groups to .NET 10       Saiprasa1994   open   approved  pass  2     pending  19/19  feature/RPLAT-18678    23h
+#10  .net 10 upgradation                               Aparna-Relias  open   review    -     0     fail     -      feature/RPLAT-8516     17d
+#5   feat(user-groups): Add golden-path IaC structure  jomartin1191   open   review    fail  0     pass     2/4    golden-path-alignment  4mo
+```
 
-## Status
+## Installation
 
-This repository contains the source for the extension command:
+Requires [GitHub CLI](https://cli.github.com/) (`gh`) authenticated with your account.
 
-```text
-gh prx list
+```bash
+gh extension install HemSoft/gh-prx
+```
+
+That's it. No Go toolchain needed — `gh` builds and installs the extension automatically.
+
+## Usage
+
+```bash
+gh prx list [flags]
 ```
 
 ## What `gh prx list` adds
 
-Compared to `gh pr list`, this command keeps GitHub CLI's existing filters but renders a denser table:
+Compared to `gh pr list`, this command keeps all existing filters but renders a denser, color-coded table:
 
-- `State` shows `open`, `draft`, `closed`, or `merged`
-- `Review` normalizes review state to `approved`, `changes`, or `review`
-- `Checks` condenses status checks to `pass`, `fail`, `pending`, or `-`
-- `Branch` shows `head -> base`
-- `Updated` renders a short relative time like `12m`, `3h`, or `2d`
-
-## Prerequisites
-
-- GitHub CLI authenticated with the desired account
-- Go 1.22 or newer
-
-## Local development
-
-From the repository root:
-
-```powershell
-go mod tidy
-go build -o gh-prx.exe .
-gh extension install .
-gh prx list
-```
-
-On macOS or Linux:
-
-```bash
-go mod tidy
-go build -o gh-prx .
-gh extension install .
-gh prx list
-```
-
-## Usage
-
-```text
-gh prx list [flags]
-```
+| Column   | Description |
+|----------|-------------|
+| **#**    | PR number — clickable link to the PR on GitHub (terminals with OSC 8 support) |
+| **Title**| Truncated to 56 chars |
+| **Author**| PR author login |
+| **State**| `open`, `draft`, `closed`, or `merged` |
+| **Review**| Review decision: `approved`, `changes`, or `review` (pending) |
+| **AI**   | AI reviewer status: `pass` (approved/no issues), `fail` (issues found), or `-` (no AI review). Detects CodeRabbit, Copilot PR reviewer, and other `[bot]` reviewers |
+| **Appv** | Count of human approvals |
+| **Checks**| CI status: `pass`, `fail`, `pending`, or `-`. Includes required checks from repo rulesets that haven't reported yet |
+| **Cmts** | Review thread resolution: `resolved/total` (e.g., `3/5`). `-` if no threads |
+| **Branch**| Head branch name |
+| **Updated**| Relative time: `12m`, `3h`, `2d`, `4mo` |
 
 ### Supported flags
 
-- `-R, --repo`
-- `-L, --limit`
-- `-s, --state`
-- `-A, --author`
-- `-a, --assignee`
-- `--app`
-- `-B, --base`
-- `-H, --head`
-- `-l, --label` (repeatable)
-- `-S, --search`
-- `-d, --draft`
-- `-w, --web`
-- `--json`
+| Flag | Description |
+|------|-------------|
+| `-R, --repo OWNER/REPO` | Target a specific repository |
+| `-L, --limit N` | Maximum PRs to show (default: 30) |
+| `-s, --state STATE` | Filter: `open`, `closed`, `merged`, `all` |
+| `-A, --author USER` | Filter by PR author |
+| `-a, --assignee USER` | Filter by assignee |
+| `--app APP` | Filter by GitHub App |
+| `-B, --base BRANCH` | Filter by base branch |
+| `-H, --head BRANCH` | Filter by head branch |
+| `-l, --label LABEL` | Filter by label (repeatable) |
+| `-S, --search QUERY` | GitHub search syntax |
+| `-d, --draft` | Show only draft PRs |
+| `-w, --web` | Open in browser |
+| `--json` | Output as JSON |
 
-## Examples
+### Examples
 
-```powershell
+```bash
 gh prx list
 gh prx list --author "@me" --state all
+gh prx list --repo owner/repo --limit 10
 gh prx list --label bug --label urgent
 gh prx list --search "review:required status:success"
 gh prx list --json
 ```
 
-## Notes
+## Local development
 
-- This project intentionally wraps `gh pr list` so it can reuse GitHub CLI authentication and repository context.
-- For public installation from GitHub releases, add precompiled release assets in a later step.
+Requires Go 1.22+.
+
+```bash
+# Build and install locally (one-time symlink setup)
+go build -o gh-prx.exe .   # Windows
+go build -o gh-prx .        # macOS/Linux
+gh extension install .
+
+# After code changes, just rebuild — no reinstall needed
+go build -o gh-prx.exe .
+gh prx list
+```
+
+A convenience script is provided for Windows:
+
+```powershell
+.\build.ps1   # runs vet → test → build
+```
+
+## How it works
+
+- Wraps `gh pr list --json` for core PR data and authentication
+- Makes a single GraphQL call for supplemental data (review threads, AI reviewer detection, comment counts)
+- Fetches required status check contexts from repo rulesets to detect pending-but-unreported CI checks
+- Uses [termenv](https://github.com/muesli/termenv) for color output, respecting `NO_COLOR` and `CLICOLOR` conventions
+- SSH host aliases (e.g., `github-work:org/repo`) are handled gracefully via `gh repo view` fallback
+
+## License
+
+MIT
