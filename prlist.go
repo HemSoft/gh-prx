@@ -269,6 +269,9 @@ func executeList(options listOptions, stdout io.Writer) error {
 			if dp.AIReview == "" {
 				dp.AIReview = "-"
 			}
+			if info.ChecksOverride != "" {
+				dp.Checks = info.ChecksOverride
+			}
 		}
 		rendered = append(rendered, dp)
 	}
@@ -566,8 +569,9 @@ type reviewThreadInfo struct {
 }
 
 type prSupplementalInfo struct {
-	Threads  reviewThreadInfo
-	AIReview string
+	Threads        reviewThreadInfo
+	AIReview       string
+	ChecksOverride string // aggregate commit status from GraphQL (includes expected checks)
 }
 
 // aiReviewNode holds the fields needed to detect bot reviewer status.
@@ -584,13 +588,22 @@ func formatComments(info reviewThreadInfo) string {
 	return fmt.Sprintf("%d/%d", info.Resolved, info.Total)
 }
 
+// Known AI reviewer logins that don't use the [bot] suffix convention.
+var knownAIReviewers = map[string]bool{
+	"copilot-pull-request-reviewer": true,
+}
+
+func isAIReviewer(login string) bool {
+	return strings.HasSuffix(login, "[bot]") || knownAIReviewers[login]
+}
+
 func detectAIReview(nodes []aiReviewNode) string {
 	hasApproval := false
 	hasIssues := false
 	hasBotReview := false
 
 	for _, r := range nodes {
-		if !strings.HasSuffix(r.AuthorLogin, "[bot]") {
+		if !isAIReviewer(r.AuthorLogin) {
 			continue
 		}
 		hasBotReview = true
@@ -620,6 +633,21 @@ func detectAIReview(nodes []aiReviewNode) string {
 		return "pass"
 	}
 	return "-"
+}
+
+// normalizeGraphQLCheckState maps the aggregate StatusCheckRollup.state
+// (which includes branch-protection-expected checks) to display values.
+func normalizeGraphQLCheckState(state string) string {
+	switch strings.ToUpper(state) {
+	case "SUCCESS":
+		return "pass"
+	case "FAILURE", "ERROR":
+		return "fail"
+	case "PENDING", "EXPECTED":
+		return "pending"
+	default:
+		return ""
+	}
 }
 
 func resolveRepo(repoOverride string) (string, string, error) {
@@ -664,7 +692,7 @@ func fetchPRSupplemental(owner, name string, prNumbers []int) (map[int]prSupplem
 	var queryParts []string
 	for _, num := range prNumbers {
 		queryParts = append(queryParts, fmt.Sprintf(
-			`pr%d: pullRequest(number: %d) { number reviewThreads(first: 100) { totalCount nodes { isResolved } } latestReviews(first: 50) { nodes { state author { login } comments { totalCount } } } }`,
+			`pr%d: pullRequest(number: %d) { number reviewThreads(first: 100) { totalCount nodes { isResolved } } latestReviews(first: 50) { nodes { state author { login } comments { totalCount } } } commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } }`,
 			num, num,
 		))
 	}
@@ -709,6 +737,15 @@ func fetchPRSupplemental(owner, name string, prNumbers []int) (map[int]prSupplem
 					} `json:"comments"`
 				} `json:"nodes"`
 			} `json:"latestReviews"`
+			Commits struct {
+				Nodes []struct {
+					Commit struct {
+						StatusCheckRollup struct {
+							State string `json:"state"`
+						} `json:"statusCheckRollup"`
+					} `json:"commit"`
+				} `json:"nodes"`
+			} `json:"commits"`
 		}
 		if err := json.Unmarshal(raw, &prData); err != nil {
 			continue
@@ -730,12 +767,20 @@ func fetchPRSupplemental(owner, name string, prNumbers []int) (map[int]prSupplem
 			})
 		}
 
+		checksOverride := ""
+		if len(prData.Commits.Nodes) > 0 {
+			checksOverride = normalizeGraphQLCheckState(
+				prData.Commits.Nodes[0].Commit.StatusCheckRollup.State,
+			)
+		}
+
 		result[prData.Number] = prSupplementalInfo{
 			Threads: reviewThreadInfo{
 				Total:    prData.ReviewThreads.TotalCount,
 				Resolved: resolved,
 			},
-			AIReview: detectAIReview(aiNodes),
+			AIReview:       detectAIReview(aiNodes),
+			ChecksOverride: checksOverride,
 		}
 	}
 

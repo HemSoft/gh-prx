@@ -262,6 +262,49 @@ func TestFormatComments(t *testing.T) {
 	}
 }
 
+func TestIsAIReviewer(t *testing.T) {
+	tests := []struct {
+		login string
+		want  bool
+	}{
+		{"coderabbitai[bot]", true},
+		{"copilot[bot]", true},
+		{"copilot-pull-request-reviewer", true},
+		{"human-reviewer", false},
+		{"dependabot[bot]", true},
+		{"", false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.login, func(t *testing.T) {
+			if got := isAIReviewer(tc.login); got != tc.want {
+				t.Fatalf("isAIReviewer(%q) = %v, want %v", tc.login, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNormalizeGraphQLCheckState(t *testing.T) {
+	tests := []struct {
+		state string
+		want  string
+	}{
+		{"SUCCESS", "pass"},
+		{"FAILURE", "fail"},
+		{"ERROR", "fail"},
+		{"PENDING", "pending"},
+		{"EXPECTED", "pending"},
+		{"", ""},
+		{"UNKNOWN", ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.state, func(t *testing.T) {
+			if got := normalizeGraphQLCheckState(tc.state); got != tc.want {
+				t.Fatalf("expected %q, got %q", tc.want, got)
+			}
+		})
+	}
+}
+
 func TestDetectAIReview(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -278,6 +321,9 @@ func TestDetectAIReview(t *testing.T) {
 		}, want: "pass"},
 		{name: "copilot no comments", nodes: []aiReviewNode{
 			{State: "COMMENTED", AuthorLogin: "copilot[bot]", CommentCount: 0},
+		}, want: "pass"},
+		{name: "copilot-pull-request-reviewer no comments", nodes: []aiReviewNode{
+			{State: "COMMENTED", AuthorLogin: "copilot-pull-request-reviewer", CommentCount: 0},
 		}, want: "pass"},
 		{name: "bot with comments", nodes: []aiReviewNode{
 			{State: "COMMENTED", AuthorLogin: "coderabbitai[bot]", CommentCount: 3},
