@@ -17,7 +17,7 @@ Requires [GitHub CLI](https://cli.github.com/) (`gh`) authenticated with your ac
 gh extension install HemSoft/gh-prx
 ```
 
-That's it. No Go toolchain needed — `gh` builds and installs the extension automatically.
+That's it. Prebuilt binaries are available for all platforms — no Go toolchain needed.
 
 ## Usage
 
