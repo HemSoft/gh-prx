@@ -101,6 +101,17 @@ A convenience script is provided for Windows:
 - Uses [termenv](https://github.com/muesli/termenv) for color output, respecting `NO_COLOR` and `CLICOLOR` conventions
 - SSH host aliases (e.g., `github-work:org/repo`) are handled gracefully via `gh repo view` fallback
 
+## Releases
+
+Every push to `main` that includes code changes automatically creates a new patch release with prebuilt binaries for all platforms. Documentation-only changes are skipped.
+
+For major or minor version bumps, tag manually:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
 ## License
 
 MIT

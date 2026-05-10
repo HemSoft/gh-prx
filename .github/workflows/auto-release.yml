@@ -1,0 +1,107 @@
+name: Auto Release
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "*.md"
+      - "**/*.md"
+      - ".agents/**"
+      - "LICENSE"
+
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Skip if HEAD already tagged
+        id: check
+        run: |
+          if git tag --points-at HEAD | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "HEAD already has a release tag — skipping auto-release"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-go@v5
+        if: steps.check.outputs.skip == 'false'
+        with:
+          go-version-file: go.mod
+
+      - name: Run tests
+        if: steps.check.outputs.skip == 'false'
+        run: go test ./... -count=1
+
+      - name: Determine next version
+        if: steps.check.outputs.skip == 'false'
+        id: version
+        run: |
+          latest=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1)
+          if [ -z "$latest" ]; then
+            latest="v0.0.0"
+          fi
+          if [[ "$latest" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            major="${BASH_REMATCH[1]}"
+            minor="${BASH_REMATCH[2]}"
+            patch="${BASH_REMATCH[3]}"
+          else
+            echo "::error::Could not parse latest tag: $latest"
+            exit 1
+          fi
+          next="v${major}.${minor}.$((patch + 1))"
+          echo "tag=$next" >> "$GITHUB_OUTPUT"
+          echo "Auto-releasing as $next (previous: $latest)"
+
+      - name: Build cross-platform binaries
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          mkdir -p dist
+          platforms=(
+            "darwin/amd64"
+            "darwin/arm64"
+            "freebsd/386"
+            "freebsd/amd64"
+            "freebsd/arm64"
+            "linux/386"
+            "linux/amd64"
+            "linux/arm"
+            "linux/arm64"
+            "windows/386"
+            "windows/amd64"
+            "windows/arm64"
+          )
+          for platform in "${platforms[@]}"; do
+            os="${platform%/*}"
+            arch="${platform#*/}"
+            ext=""
+            [[ "$os" == "windows" ]] && ext=".exe"
+            output="dist/${os}-${arch}${ext}"
+            echo "Building ${output}..."
+            GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$output" .
+          done
+
+      - name: Create release
+        if: steps.check.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="${{ steps.version.outputs.tag }}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists — uploading assets with --clobber"
+            gh release upload "$tag" dist/* --clobber
+          else
+            gh release create "$tag" dist/* \
+              --title "$tag" \
+              --generate-notes
+          fi
