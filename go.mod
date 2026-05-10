@@ -4,6 +4,7 @@ go 1.23.0
 
 require (
 	github.com/cli/go-gh/v2 v2.12.1
+	github.com/mattn/go-runewidth v0.0.16
 	github.com/muesli/termenv v0.16.0
 )
 

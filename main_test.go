@@ -62,6 +62,11 @@ func TestBuildDisplayPullRequestNormalizesFields(t *testing.T) {
 		StatusCheckRollup: []checkItem{
 			{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "SUCCESS"},
 		},
+		LatestReviews: []review{
+			{State: "APPROVED", Author: &author{Login: "reviewer1"}},
+			{State: "COMMENTED", Author: &author{Login: "reviewer2"}},
+			{State: "APPROVED", Author: &author{Login: "reviewer3"}},
+		},
 	}
 
 	got := buildDisplayPullRequest(pullRequest, now)
@@ -78,8 +83,16 @@ func TestBuildDisplayPullRequestNormalizesFields(t *testing.T) {
 		t.Fatalf("expected pass checks, got %q", got.Checks)
 	}
 
-	if got.Branch != "feature/prx -> main" {
+	if got.Branch != "feature/prx" {
 		t.Fatalf("unexpected branch column %q", got.Branch)
+	}
+
+	if got.Approvals != 2 {
+		t.Fatalf("expected 2 approvals, got %d", got.Approvals)
+	}
+
+	if got.Comments != "-" {
+		t.Fatalf("expected default comments '-', got %q", got.Comments)
 	}
 
 	if got.Updated != "2h" {
@@ -119,7 +132,7 @@ func TestFormatRelativeTime(t *testing.T) {
 func TestRenderTableNoColor(t *testing.T) {
 	var buf bytes.Buffer
 	prs := []displayPullRequest{
-		{Number: 42, Title: "My PR", Author: "user", State: "open", Review: "approved", Checks: "pass", Branch: "feat -> main", Updated: "2h"},
+		{Number: 42, Title: "My PR", Author: "user", State: "open", Review: "approved", Approvals: 2, Checks: "pass", Comments: "3/5", Branch: "feat", Updated: "2h"},
 	}
 	err := renderTableWithStyle(&buf, listOptions{}, prs, false)
 	if err != nil {
@@ -143,7 +156,7 @@ func TestRenderTableNoColor(t *testing.T) {
 func TestRenderTableWithColor(t *testing.T) {
 	var buf bytes.Buffer
 	prs := []displayPullRequest{
-		{Number: 7, Title: "Add colors", Author: "dev", State: "open", Review: "review", Checks: "pending", Branch: "color -> main", Updated: "5m"},
+		{Number: 7, Title: "Add colors", Author: "dev", State: "open", Review: "review", Approvals: 0, Checks: "pending", Comments: "-", Branch: "color", Updated: "5m"},
 	}
 	err := renderTableWithStyle(&buf, listOptions{}, prs, true)
 	if err != nil {
@@ -161,8 +174,8 @@ func TestRenderTableWithColor(t *testing.T) {
 func TestRenderTableAlignment(t *testing.T) {
 	var buf bytes.Buffer
 	prs := []displayPullRequest{
-		{Number: 1, Title: "Short", Author: "a", State: "open", Review: "-", Checks: "-", Branch: "x -> main", Updated: "1h"},
-		{Number: 999, Title: "Longer title here", Author: "longuser", State: "merged", Review: "approved", Checks: "pass", Branch: "feature/long -> main", Updated: "30d"},
+		{Number: 1, Title: "Short", Author: "a", State: "open", Review: "-", Approvals: 0, Checks: "-", Comments: "-", Branch: "x", Updated: "1h"},
+		{Number: 999, Title: "Longer title here", Author: "longuser", State: "merged", Review: "approved", Approvals: 3, Checks: "pass", Comments: "5/5", Branch: "feature/long", Updated: "30d"},
 	}
 	err := renderTableWithStyle(&buf, listOptions{}, prs, false)
 	if err != nil {
@@ -197,5 +210,59 @@ func TestRenderTableEmpty(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "No pull requests found") {
 		t.Fatal("expected empty message")
+	}
+}
+
+func TestCountApprovals(t *testing.T) {
+	tests := []struct {
+		name    string
+		reviews []review
+		want    int
+	}{
+		{name: "nil", reviews: nil, want: 0},
+		{name: "empty", reviews: []review{}, want: 0},
+		{name: "one approved", reviews: []review{{State: "APPROVED"}}, want: 1},
+		{name: "mixed", reviews: []review{
+			{State: "APPROVED"},
+			{State: "COMMENTED"},
+			{State: "CHANGES_REQUESTED"},
+			{State: "APPROVED"},
+		}, want: 2},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := countApprovals(tc.reviews); got != tc.want {
+				t.Fatalf("expected %d, got %d", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestFormatComments(t *testing.T) {
+	tests := []struct {
+		name string
+		info reviewThreadInfo
+		want string
+	}{
+		{name: "none", info: reviewThreadInfo{}, want: "-"},
+		{name: "all resolved", info: reviewThreadInfo{Total: 5, Resolved: 5}, want: "5/5"},
+		{name: "partial", info: reviewThreadInfo{Total: 5, Resolved: 3}, want: "3/5"},
+		{name: "none resolved", info: reviewThreadInfo{Total: 3, Resolved: 0}, want: "0/3"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := formatComments(tc.info); got != tc.want {
+				t.Fatalf("expected %q, got %q", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestFormatBranch(t *testing.T) {
+	if got := formatBranch("feature/test"); got != "feature/test" {
+		t.Fatalf("expected 'feature/test', got %q", got)
+	}
+	if got := formatBranch(""); got != "-" {
+		t.Fatalf("expected '-', got %q", got)
 	}
 }

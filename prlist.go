@@ -10,10 +10,11 @@ import (
 	gh "github.com/cli/go-gh/v2"
 	"github.com/cli/go-gh/v2/pkg/repository"
 	"github.com/cli/go-gh/v2/pkg/term"
+	"github.com/mattn/go-runewidth"
 	"github.com/muesli/termenv"
 )
 
-const jsonFields = "number,title,author,state,isDraft,reviewDecision,statusCheckRollup,updatedAt,headRefName,baseRefName,url"
+const jsonFields = "number,title,author,state,isDraft,reviewDecision,statusCheckRollup,updatedAt,headRefName,baseRefName,url,latestReviews"
 
 type listOptions struct {
 	repo      string
@@ -54,10 +55,16 @@ type pullRequest struct {
 	BaseRefName       string      `json:"baseRefName"`
 	URL               string      `json:"url"`
 	Author            *author     `json:"author"`
+	LatestReviews     []review    `json:"latestReviews"`
 }
 
 type author struct {
 	Login string `json:"login"`
+}
+
+type review struct {
+	State  string  `json:"state"`
+	Author *author `json:"author"`
 }
 
 // checkItem represents a single entry in the statusCheckRollup array.
@@ -70,15 +77,17 @@ type checkItem struct {
 }
 
 type displayPullRequest struct {
-	Number  int    `json:"number"`
-	Title   string `json:"title"`
-	Author  string `json:"author"`
-	State   string `json:"state"`
-	Review  string `json:"review"`
-	Checks  string `json:"checks"`
-	Branch  string `json:"branch"`
-	Updated string `json:"updated"`
-	URL     string `json:"url"`
+	Number   int    `json:"number"`
+	Title    string `json:"title"`
+	Author   string `json:"author"`
+	State    string `json:"state"`
+	Review   string `json:"review"`
+	Approvals int   `json:"approvals"`
+	Checks   string `json:"checks"`
+	Comments string `json:"comments"`
+	Branch   string `json:"branch"`
+	Updated  string `json:"updated"`
+	URL      string `json:"url"`
 }
 
 type tableCell struct {
@@ -167,6 +176,28 @@ func (s tableStyler) branchCell(branch string) tableCell {
 	return s.colored(branch, termenv.ANSICyan)
 }
 
+func (s tableStyler) approvalCell(count int) tableCell {
+	text := fmt.Sprintf("%d", count)
+	if count > 0 {
+		return s.colored(text, termenv.ANSIGreen)
+	}
+	return s.dim(text)
+}
+
+func (s tableStyler) commentsCell(comments string) tableCell {
+	if comments == "-" || comments == "?" {
+		return s.plain(comments)
+	}
+	parts := strings.SplitN(comments, "/", 2)
+	if len(parts) == 2 && parts[0] == parts[1] {
+		return s.colored(comments, termenv.ANSIGreen)
+	}
+	if len(parts) == 2 && parts[0] == "0" {
+		return s.colored(comments, termenv.ANSIRed)
+	}
+	return s.colored(comments, termenv.ANSIYellow)
+}
+
 func defaultListOptions() listOptions {
 	return listOptions{
 		limit: 30,
@@ -196,8 +227,32 @@ func executeList(options listOptions, stdout io.Writer) error {
 
 	rendered := make([]displayPullRequest, 0, len(pullRequests))
 	now := time.Now().UTC()
+
+	// Fetch review thread counts via GraphQL (best-effort)
+	threadMap := make(map[int]reviewThreadInfo)
+	threadFetchFailed := false
+	if owner, name, err := resolveRepo(options.repo); err == nil {
+		numbers := make([]int, len(pullRequests))
+		for i, pr := range pullRequests {
+			numbers[i] = pr.Number
+		}
+		if fetched, err := fetchReviewThreads(owner, name, numbers); err == nil {
+			threadMap = fetched
+		} else {
+			threadFetchFailed = true
+		}
+	} else {
+		threadFetchFailed = true
+	}
+
 	for _, pullRequest := range pullRequests {
-		rendered = append(rendered, buildDisplayPullRequest(pullRequest, now))
+		dp := buildDisplayPullRequest(pullRequest, now)
+		if threadFetchFailed {
+			dp.Comments = "?"
+		} else {
+			dp.Comments = formatComments(threadMap[pullRequest.Number])
+		}
+		rendered = append(rendered, dp)
 	}
 
 	if options.json {
@@ -267,15 +322,17 @@ func buildDisplayPullRequest(pullRequest pullRequest, now time.Time) displayPull
 	}
 
 	return displayPullRequest{
-		Number:  pullRequest.Number,
-		Title:   trimTitle(pullRequest.Title, 56),
-		Author:  authorName,
-		State:   normalizeState(pullRequest.State, pullRequest.IsDraft),
-		Review:  normalizeReviewDecision(pullRequest.ReviewDecision),
-		Checks:  normalizeCheckState(pullRequest.StatusCheckRollup),
-		Branch:  formatBranch(pullRequest.HeadRefName, pullRequest.BaseRefName),
-		Updated: formatRelativeTime(pullRequest.UpdatedAt, now),
-		URL:     pullRequest.URL,
+		Number:    pullRequest.Number,
+		Title:     trimTitle(pullRequest.Title, 56),
+		Author:    authorName,
+		State:     normalizeState(pullRequest.State, pullRequest.IsDraft),
+		Review:    normalizeReviewDecision(pullRequest.ReviewDecision),
+		Approvals: countApprovals(pullRequest.LatestReviews),
+		Checks:    normalizeCheckState(pullRequest.StatusCheckRollup),
+		Comments:  "-",
+		Branch:    formatBranch(pullRequest.HeadRefName),
+		Updated:   formatRelativeTime(pullRequest.UpdatedAt, now),
+		URL:       pullRequest.URL,
 	}
 }
 
@@ -296,7 +353,7 @@ func renderTableWithStyle(stdout io.Writer, options listOptions, pullRequests []
 
 	styler := newTableStyler(stdout, colorEnabled)
 
-	headerLabels := []string{"#", "Title", "Author", "State", "Review", "Checks", "Branch", "Updated"}
+	headerLabels := []string{"#", "Title", "Author", "State", "Review", "Appv", "Checks", "Cmts", "Branch", "Updated"}
 	headers := make([]tableCell, len(headerLabels))
 	for i, label := range headerLabels {
 		headers[i] = styler.dim(label)
@@ -310,7 +367,9 @@ func renderTableWithStyle(stdout io.Writer, options listOptions, pullRequests []
 			styler.plain(pr.Author),
 			styler.stateCell(pr.State),
 			styler.reviewCell(pr.Review),
+			styler.approvalCell(pr.Approvals),
 			styler.checksCell(pr.Checks),
+			styler.commentsCell(pr.Comments),
 			styler.branchCell(pr.Branch),
 			styler.dim(pr.Updated),
 		}
@@ -318,14 +377,14 @@ func renderTableWithStyle(stdout io.Writer, options listOptions, pullRequests []
 
 	colWidths := make([]int, len(headers))
 	for i, h := range headers {
-		if len(h.text) > colWidths[i] {
-			colWidths[i] = len(h.text)
+		if w := runewidth.StringWidth(h.text); w > colWidths[i] {
+			colWidths[i] = w
 		}
 	}
 	for _, row := range rows {
 		for i, cell := range row {
-			if len(cell.text) > colWidths[i] {
-				colWidths[i] = len(cell.text)
+			if w := runewidth.StringWidth(cell.text); w > colWidths[i] {
+				colWidths[i] = w
 			}
 		}
 	}
@@ -342,7 +401,7 @@ func writeRow(w io.Writer, cells []tableCell, widths []int) {
 	for i, cell := range cells {
 		fmt.Fprint(w, cell.styled)
 		if i < len(cells)-1 {
-			padding := widths[i] - len(cell.text) + 2
+			padding := widths[i] - runewidth.StringWidth(cell.text) + 2
 			fmt.Fprint(w, strings.Repeat(" ", padding))
 		}
 	}
@@ -438,17 +497,11 @@ func normalizeCheckState(items []checkItem) string {
 	}
 }
 
-func formatBranch(head string, base string) string {
-	switch {
-	case head == "" && base == "":
+func formatBranch(head string) string {
+	if head == "" {
 		return "-"
-	case base == "":
-		return head
-	case head == "":
-		return base
-	default:
-		return fmt.Sprintf("%s -> %s", head, base)
 	}
+	return head
 }
 
 func formatRelativeTime(updatedAt time.Time, now time.Time) string {
@@ -475,6 +528,105 @@ func formatRelativeTime(updatedAt time.Time, now time.Time) string {
 	default:
 		return fmt.Sprintf("%dy", int(age.Hours()/(24*365)))
 	}
+}
+
+func countApprovals(reviews []review) int {
+	count := 0
+	for _, r := range reviews {
+		if strings.EqualFold(r.State, "APPROVED") {
+			count++
+		}
+	}
+	return count
+}
+
+type reviewThreadInfo struct {
+	Total    int
+	Resolved int
+}
+
+func formatComments(info reviewThreadInfo) string {
+	if info.Total == 0 {
+		return "-"
+	}
+	return fmt.Sprintf("%d/%d", info.Resolved, info.Total)
+}
+
+func resolveRepo(repoOverride string) (string, string, error) {
+	if repoOverride != "" {
+		parts := strings.Split(repoOverride, "/")
+		if len(parts) < 2 {
+			return "", "", fmt.Errorf("invalid repo format: %s", repoOverride)
+		}
+		return parts[len(parts)-2], parts[len(parts)-1], nil
+	}
+
+	repo, err := repository.Current()
+	if err != nil {
+		return "", "", err
+	}
+	return repo.Owner, repo.Name, nil
+}
+
+func fetchReviewThreads(owner, name string, prNumbers []int) (map[int]reviewThreadInfo, error) {
+	if len(prNumbers) == 0 {
+		return nil, nil
+	}
+
+	var queryParts []string
+	for _, num := range prNumbers {
+		queryParts = append(queryParts, fmt.Sprintf(
+			`pr%d: pullRequest(number: %d) { number reviewThreads(first: 100) { totalCount nodes { isResolved } } }`,
+			num, num,
+		))
+	}
+
+	query := fmt.Sprintf(
+		`query { repository(owner: %q, name: %q) { %s } }`,
+		owner, name, strings.Join(queryParts, " "),
+	)
+
+	stdout, _, err := gh.Exec("api", "graphql", "-f", fmt.Sprintf("query=%s", query))
+	if err != nil {
+		return nil, err
+	}
+
+	var resp struct {
+		Data struct {
+			Repository map[string]json.RawMessage `json:"repository"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &resp); err != nil {
+		return nil, err
+	}
+
+	result := make(map[int]reviewThreadInfo)
+	for _, raw := range resp.Data.Repository {
+		var prData struct {
+			Number        int `json:"number"`
+			ReviewThreads struct {
+				TotalCount int `json:"totalCount"`
+				Nodes      []struct {
+					IsResolved bool `json:"isResolved"`
+				} `json:"nodes"`
+			} `json:"reviewThreads"`
+		}
+		if err := json.Unmarshal(raw, &prData); err != nil {
+			continue
+		}
+		resolved := 0
+		for _, node := range prData.ReviewThreads.Nodes {
+			if node.IsResolved {
+				resolved++
+			}
+		}
+		result[prData.Number] = reviewThreadInfo{
+			Total:    prData.ReviewThreads.TotalCount,
+			Resolved: resolved,
+		}
+	}
+
+	return result, nil
 }
 
 func trimTitle(title string, limit int) string {
