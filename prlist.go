@@ -42,25 +42,30 @@ func (s *stringSliceFlag) Set(value string) error {
 }
 
 type pullRequest struct {
-	Number            int          `json:"number"`
-	Title             string       `json:"title"`
-	State             string       `json:"state"`
-	IsDraft           bool         `json:"isDraft"`
-	ReviewDecision    string       `json:"reviewDecision"`
-	StatusCheckRollup *checkRollup `json:"statusCheckRollup"`
-	UpdatedAt         time.Time    `json:"updatedAt"`
-	HeadRefName       string       `json:"headRefName"`
-	BaseRefName       string       `json:"baseRefName"`
-	URL               string       `json:"url"`
-	Author            *author      `json:"author"`
+	Number            int         `json:"number"`
+	Title             string      `json:"title"`
+	State             string      `json:"state"`
+	IsDraft           bool        `json:"isDraft"`
+	ReviewDecision    string      `json:"reviewDecision"`
+	StatusCheckRollup []checkItem `json:"statusCheckRollup"`
+	UpdatedAt         time.Time   `json:"updatedAt"`
+	HeadRefName       string      `json:"headRefName"`
+	BaseRefName       string      `json:"baseRefName"`
+	URL               string      `json:"url"`
+	Author            *author     `json:"author"`
 }
 
 type author struct {
 	Login string `json:"login"`
 }
 
-type checkRollup struct {
-	State string `json:"state"`
+// checkItem represents a single entry in the statusCheckRollup array.
+// CheckRun items use Status+Conclusion; StatusContext items use State.
+type checkItem struct {
+	Typename   string `json:"__typename"`
+	Status     string `json:"status"`
+	Conclusion string `json:"conclusion"`
+	State      string `json:"state"`
 }
 
 type displayPullRequest struct {
@@ -266,20 +271,43 @@ func normalizeReviewDecision(reviewDecision string) string {
 	}
 }
 
-func normalizeCheckState(rollup *checkRollup) string {
-	if rollup == nil || rollup.State == "" {
+func normalizeCheckState(items []checkItem) string {
+	if len(items) == 0 {
 		return "-"
 	}
 
-	switch strings.ToUpper(rollup.State) {
-	case "SUCCESS":
-		return "pass"
-	case "EXPECTED", "PENDING", "IN_PROGRESS", "QUEUED":
-		return "pending"
-	case "ERROR", "FAILURE", "TIMED_OUT", "STARTUP_FAILURE", "ACTION_REQUIRED":
+	hasFail := false
+	hasPending := false
+	for _, item := range items {
+		switch {
+		case item.Typename == "StatusContext":
+			switch strings.ToUpper(item.State) {
+			case "ERROR", "FAILURE":
+				hasFail = true
+			case "EXPECTED", "PENDING":
+				hasPending = true
+			}
+		default: // CheckRun
+			switch strings.ToUpper(item.Conclusion) {
+			case "FAILURE", "TIMED_OUT", "STARTUP_FAILURE", "ACTION_REQUIRED":
+				hasFail = true
+			case "":
+				// No conclusion yet — still running
+				hasPending = true
+			}
+			if strings.ToUpper(item.Status) != "COMPLETED" {
+				hasPending = true
+			}
+		}
+	}
+
+	switch {
+	case hasFail:
 		return "fail"
+	case hasPending:
+		return "pending"
 	default:
-		return strings.ToLower(rollup.State)
+		return "pass"
 	}
 }
 

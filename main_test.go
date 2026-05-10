@@ -57,8 +57,8 @@ func TestBuildDisplayPullRequestNormalizesFields(t *testing.T) {
 		BaseRefName:    "main",
 		URL:            "https://github.com/HemSoft/gh-prx/pull/42",
 		Author:         &author{Login: "HemSoft"},
-		StatusCheckRollup: &checkRollup{
-			State: "SUCCESS",
+		StatusCheckRollup: []checkItem{
+			{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "SUCCESS"},
 		},
 	}
 
