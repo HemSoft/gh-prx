@@ -1,0 +1,14 @@
+# Build outputs
+gh-prx
+gh-prx.exe
+dist/
+bin/
+
+# Go
+coverage.out
+*.test
+
+# Editors and OS files
+.DS_Store
+.idea/
+.vscode/
