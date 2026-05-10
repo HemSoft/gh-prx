@@ -85,6 +85,7 @@ type displayPullRequest struct {
 	Approvals int   `json:"approvals"`
 	Checks   string `json:"checks"`
 	Comments string `json:"comments"`
+	AIReview string `json:"aiReview"`
 	Branch   string `json:"branch"`
 	Updated  string `json:"updated"`
 	URL      string `json:"url"`
@@ -198,6 +199,17 @@ func (s tableStyler) commentsCell(comments string) tableCell {
 	return s.colored(comments, termenv.ANSIYellow)
 }
 
+func (s tableStyler) aiReviewCell(aiReview string) tableCell {
+	switch aiReview {
+	case "pass":
+		return s.colored(aiReview, termenv.ANSIGreen)
+	case "fail":
+		return s.colored(aiReview, termenv.ANSIRed)
+	default:
+		return s.plain(aiReview)
+	}
+}
+
 func defaultListOptions() listOptions {
 	return listOptions{
 		limit: 30,
@@ -228,29 +240,35 @@ func executeList(options listOptions, stdout io.Writer) error {
 	rendered := make([]displayPullRequest, 0, len(pullRequests))
 	now := time.Now().UTC()
 
-	// Fetch review thread counts via GraphQL (best-effort)
-	threadMap := make(map[int]reviewThreadInfo)
-	threadFetchFailed := false
+	// Fetch supplemental PR data via GraphQL (best-effort)
+	supplemental := make(map[int]prSupplementalInfo)
+	supplementalFailed := false
 	if owner, name, err := resolveRepo(options.repo); err == nil {
 		numbers := make([]int, len(pullRequests))
 		for i, pr := range pullRequests {
 			numbers[i] = pr.Number
 		}
-		if fetched, err := fetchReviewThreads(owner, name, numbers); err == nil {
-			threadMap = fetched
+		if fetched, err := fetchPRSupplemental(owner, name, numbers); err == nil {
+			supplemental = fetched
 		} else {
-			threadFetchFailed = true
+			supplementalFailed = true
 		}
 	} else {
-		threadFetchFailed = true
+		supplementalFailed = true
 	}
 
 	for _, pullRequest := range pullRequests {
 		dp := buildDisplayPullRequest(pullRequest, now)
-		if threadFetchFailed {
+		if supplementalFailed {
 			dp.Comments = "?"
+			dp.AIReview = "?"
 		} else {
-			dp.Comments = formatComments(threadMap[pullRequest.Number])
+			info := supplemental[pullRequest.Number]
+			dp.Comments = formatComments(info.Threads)
+			dp.AIReview = info.AIReview
+			if dp.AIReview == "" {
+				dp.AIReview = "-"
+			}
 		}
 		rendered = append(rendered, dp)
 	}
@@ -330,6 +348,7 @@ func buildDisplayPullRequest(pullRequest pullRequest, now time.Time) displayPull
 		Approvals: countApprovals(pullRequest.LatestReviews),
 		Checks:    normalizeCheckState(pullRequest.StatusCheckRollup),
 		Comments:  "-",
+		AIReview:  "-",
 		Branch:    formatBranch(pullRequest.HeadRefName),
 		Updated:   formatRelativeTime(pullRequest.UpdatedAt, now),
 		URL:       pullRequest.URL,
@@ -354,7 +373,7 @@ func renderTableWithStyle(stdout io.Writer, options listOptions, pullRequests []
 
 	styler := newTableStyler(stdout, colorEnabled)
 
-	headerLabels := []string{"#", "Title", "Author", "State", "Review", "Appv", "Checks", "Cmts", "Branch", "Updated"}
+	headerLabels := []string{"#", "Title", "Author", "State", "Review", "AI", "Appv", "Checks", "Cmts", "Branch", "Updated"}
 	headers := make([]tableCell, len(headerLabels))
 	for i, label := range headerLabels {
 		headers[i] = styler.dim(label)
@@ -368,6 +387,7 @@ func renderTableWithStyle(stdout io.Writer, options listOptions, pullRequests []
 			styler.plain(pr.Author),
 			styler.stateCell(pr.State),
 			styler.reviewCell(pr.Review),
+			styler.aiReviewCell(pr.AIReview),
 			styler.approvalCell(pr.Approvals),
 			styler.checksCell(pr.Checks),
 			styler.commentsCell(pr.Comments),
@@ -545,11 +565,61 @@ type reviewThreadInfo struct {
 	Resolved int
 }
 
+type prSupplementalInfo struct {
+	Threads  reviewThreadInfo
+	AIReview string
+}
+
+// aiReviewNode holds the fields needed to detect bot reviewer status.
+type aiReviewNode struct {
+	State        string
+	AuthorLogin  string
+	CommentCount int
+}
+
 func formatComments(info reviewThreadInfo) string {
 	if info.Total == 0 {
 		return "-"
 	}
 	return fmt.Sprintf("%d/%d", info.Resolved, info.Total)
+}
+
+func detectAIReview(nodes []aiReviewNode) string {
+	hasApproval := false
+	hasIssues := false
+	hasBotReview := false
+
+	for _, r := range nodes {
+		if !strings.HasSuffix(r.AuthorLogin, "[bot]") {
+			continue
+		}
+		hasBotReview = true
+
+		switch strings.ToUpper(r.State) {
+		case "APPROVED":
+			hasApproval = true
+		case "CHANGES_REQUESTED":
+			hasIssues = true
+		case "COMMENTED":
+			if r.CommentCount == 0 {
+				// Bot reviewed with no inline comments — implicit approval (e.g. Copilot)
+				hasApproval = true
+			} else {
+				hasIssues = true
+			}
+		}
+	}
+
+	if !hasBotReview {
+		return "-"
+	}
+	if hasIssues {
+		return "fail"
+	}
+	if hasApproval {
+		return "pass"
+	}
+	return "-"
 }
 
 func resolveRepo(repoOverride string) (string, string, error) {
@@ -586,7 +656,7 @@ func resolveRepo(repoOverride string) (string, string, error) {
 	return info.Owner.Login, info.Name, nil
 }
 
-func fetchReviewThreads(owner, name string, prNumbers []int) (map[int]reviewThreadInfo, error) {
+func fetchPRSupplemental(owner, name string, prNumbers []int) (map[int]prSupplementalInfo, error) {
 	if len(prNumbers) == 0 {
 		return nil, nil
 	}
@@ -594,7 +664,7 @@ func fetchReviewThreads(owner, name string, prNumbers []int) (map[int]reviewThre
 	var queryParts []string
 	for _, num := range prNumbers {
 		queryParts = append(queryParts, fmt.Sprintf(
-			`pr%d: pullRequest(number: %d) { number reviewThreads(first: 100) { totalCount nodes { isResolved } } }`,
+			`pr%d: pullRequest(number: %d) { number reviewThreads(first: 100) { totalCount nodes { isResolved } } latestReviews(first: 50) { nodes { state author { login } comments { totalCount } } } }`,
 			num, num,
 		))
 	}
@@ -618,7 +688,7 @@ func fetchReviewThreads(owner, name string, prNumbers []int) (map[int]reviewThre
 		return nil, err
 	}
 
-	result := make(map[int]reviewThreadInfo)
+	result := make(map[int]prSupplementalInfo)
 	for _, raw := range resp.Data.Repository {
 		var prData struct {
 			Number        int `json:"number"`
@@ -628,19 +698,44 @@ func fetchReviewThreads(owner, name string, prNumbers []int) (map[int]reviewThre
 					IsResolved bool `json:"isResolved"`
 				} `json:"nodes"`
 			} `json:"reviewThreads"`
+			LatestReviews struct {
+				Nodes []struct {
+					State  string `json:"state"`
+					Author struct {
+						Login string `json:"login"`
+					} `json:"author"`
+					Comments struct {
+						TotalCount int `json:"totalCount"`
+					} `json:"comments"`
+				} `json:"nodes"`
+			} `json:"latestReviews"`
 		}
 		if err := json.Unmarshal(raw, &prData); err != nil {
 			continue
 		}
+
 		resolved := 0
 		for _, node := range prData.ReviewThreads.Nodes {
 			if node.IsResolved {
 				resolved++
 			}
 		}
-		result[prData.Number] = reviewThreadInfo{
-			Total:    prData.ReviewThreads.TotalCount,
-			Resolved: resolved,
+
+		var aiNodes []aiReviewNode
+		for _, r := range prData.LatestReviews.Nodes {
+			aiNodes = append(aiNodes, aiReviewNode{
+				State:        r.State,
+				AuthorLogin:  r.Author.Login,
+				CommentCount: r.Comments.TotalCount,
+			})
+		}
+
+		result[prData.Number] = prSupplementalInfo{
+			Threads: reviewThreadInfo{
+				Total:    prData.ReviewThreads.TotalCount,
+				Resolved: resolved,
+			},
+			AIReview: detectAIReview(aiNodes),
 		}
 	}
 

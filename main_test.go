@@ -95,6 +95,10 @@ func TestBuildDisplayPullRequestNormalizesFields(t *testing.T) {
 		t.Fatalf("expected default comments '-', got %q", got.Comments)
 	}
 
+	if got.AIReview != "-" {
+		t.Fatalf("expected default AIReview '-', got %q", got.AIReview)
+	}
+
 	if got.Updated != "2h" {
 		t.Fatalf("unexpected updated column %q", got.Updated)
 	}
@@ -132,7 +136,7 @@ func TestFormatRelativeTime(t *testing.T) {
 func TestRenderTableNoColor(t *testing.T) {
 	var buf bytes.Buffer
 	prs := []displayPullRequest{
-		{Number: 42, Title: "My PR", Author: "user", State: "open", Review: "approved", Approvals: 2, Checks: "pass", Comments: "3/5", Branch: "feat", Updated: "2h"},
+		{Number: 42, Title: "My PR", Author: "user", State: "open", Review: "approved", AIReview: "pass", Approvals: 2, Checks: "pass", Comments: "3/5", Branch: "feat", Updated: "2h"},
 	}
 	err := renderTableWithStyle(&buf, listOptions{}, prs, false)
 	if err != nil {
@@ -156,7 +160,7 @@ func TestRenderTableNoColor(t *testing.T) {
 func TestRenderTableWithColor(t *testing.T) {
 	var buf bytes.Buffer
 	prs := []displayPullRequest{
-		{Number: 7, Title: "Add colors", Author: "dev", State: "open", Review: "review", Approvals: 0, Checks: "pending", Comments: "-", Branch: "color", Updated: "5m"},
+		{Number: 7, Title: "Add colors", Author: "dev", State: "open", Review: "review", AIReview: "-", Approvals: 0, Checks: "pending", Comments: "-", Branch: "color", Updated: "5m"},
 	}
 	err := renderTableWithStyle(&buf, listOptions{}, prs, true)
 	if err != nil {
@@ -174,8 +178,8 @@ func TestRenderTableWithColor(t *testing.T) {
 func TestRenderTableAlignment(t *testing.T) {
 	var buf bytes.Buffer
 	prs := []displayPullRequest{
-		{Number: 1, Title: "Short", Author: "a", State: "open", Review: "-", Approvals: 0, Checks: "-", Comments: "-", Branch: "x", Updated: "1h"},
-		{Number: 999, Title: "Longer title here", Author: "longuser", State: "merged", Review: "approved", Approvals: 3, Checks: "pass", Comments: "5/5", Branch: "feature/long", Updated: "30d"},
+		{Number: 1, Title: "Short", Author: "a", State: "open", Review: "-", AIReview: "-", Approvals: 0, Checks: "-", Comments: "-", Branch: "x", Updated: "1h"},
+		{Number: 999, Title: "Longer title here", Author: "longuser", State: "merged", Review: "approved", AIReview: "pass", Approvals: 3, Checks: "pass", Comments: "5/5", Branch: "feature/long", Updated: "30d"},
 	}
 	err := renderTableWithStyle(&buf, listOptions{}, prs, false)
 	if err != nil {
@@ -252,6 +256,50 @@ func TestFormatComments(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := formatComments(tc.info); got != tc.want {
+				t.Fatalf("expected %q, got %q", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestDetectAIReview(t *testing.T) {
+	tests := []struct {
+		name  string
+		nodes []aiReviewNode
+		want  string
+	}{
+		{name: "nil", nodes: nil, want: "-"},
+		{name: "empty", nodes: []aiReviewNode{}, want: "-"},
+		{name: "no bots", nodes: []aiReviewNode{
+			{State: "APPROVED", AuthorLogin: "human-reviewer", CommentCount: 0},
+		}, want: "-"},
+		{name: "coderabbit approved", nodes: []aiReviewNode{
+			{State: "APPROVED", AuthorLogin: "coderabbitai[bot]", CommentCount: 0},
+		}, want: "pass"},
+		{name: "copilot no comments", nodes: []aiReviewNode{
+			{State: "COMMENTED", AuthorLogin: "copilot[bot]", CommentCount: 0},
+		}, want: "pass"},
+		{name: "bot with comments", nodes: []aiReviewNode{
+			{State: "COMMENTED", AuthorLogin: "coderabbitai[bot]", CommentCount: 3},
+		}, want: "fail"},
+		{name: "bot changes requested", nodes: []aiReviewNode{
+			{State: "CHANGES_REQUESTED", AuthorLogin: "coderabbitai[bot]", CommentCount: 5},
+		}, want: "fail"},
+		{name: "mixed bot approved and human", nodes: []aiReviewNode{
+			{State: "APPROVED", AuthorLogin: "coderabbitai[bot]", CommentCount: 0},
+			{State: "CHANGES_REQUESTED", AuthorLogin: "human-reviewer", CommentCount: 2},
+		}, want: "pass"},
+		{name: "issues override approval", nodes: []aiReviewNode{
+			{State: "APPROVED", AuthorLogin: "coderabbitai[bot]", CommentCount: 0},
+			{State: "CHANGES_REQUESTED", AuthorLogin: "copilot[bot]", CommentCount: 1},
+		}, want: "fail"},
+		{name: "dismissed bot review ignored", nodes: []aiReviewNode{
+			{State: "DISMISSED", AuthorLogin: "coderabbitai[bot]", CommentCount: 0},
+		}, want: "-"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := detectAIReview(tc.nodes); got != tc.want {
 				t.Fatalf("expected %q, got %q", tc.want, got)
 			}
 		})
