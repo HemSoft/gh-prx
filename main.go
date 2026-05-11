@@ -30,6 +30,8 @@ func run(args []string, stdout io.Writer, stderr io.Writer) error {
 		return nil
 	case "list":
 		return runList(args[1:], stdout, stderr)
+	case "atm":
+		return runAtm(args[1:], stdout, stderr)
 	default:
 		writeRootUsage(stderr)
 		return fmt.Errorf("unknown subcommand %q", args[0])
@@ -122,11 +124,15 @@ Usage:
 
 Available Commands:
   list    Render a denser pull request list than gh pr list
+  atm     Show open PRs across an org that need your attention
 
 Examples:
   gh prx list
   gh prx list --author "@me" --state all
   gh prx list --json
+  gh prx atm
+  gh prx atm --org HemSoft
+  gh prx atm --review-required
 `
 
 const listUsage = `Usage:

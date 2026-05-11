@@ -80,18 +80,19 @@ type checkItem struct {
 }
 
 type displayPullRequest struct {
-	Number   int    `json:"number"`
-	Title    string `json:"title"`
-	Author   string `json:"author"`
-	State    string `json:"state"`
-	Review   string `json:"review"`
-	Approvals int   `json:"approvals"`
-	Checks   string `json:"checks"`
-	Comments string `json:"comments"`
-	AIReview string `json:"aiReview"`
-	Branch   string `json:"branch"`
-	Updated  string `json:"updated"`
-	URL      string `json:"url"`
+	Number    int    `json:"number"`
+	Title     string `json:"title"`
+	Author    string `json:"author"`
+	State     string `json:"state"`
+	Review    string `json:"review"`
+	Approvals int    `json:"approvals"`
+	Checks    string `json:"checks"`
+	Comments  string `json:"comments"`
+	AIReview  string `json:"aiReview"`
+	Branch    string `json:"branch,omitempty"`
+	Updated   string `json:"updated"`
+	URL       string `json:"url"`
+	Repo      string `json:"repo,omitempty"`
 }
 
 type tableCell struct {
