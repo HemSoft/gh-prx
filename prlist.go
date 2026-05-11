@@ -623,6 +623,7 @@ type prSupplementalInfo struct {
 type aiReviewNode struct {
 	State        string
 	AuthorLogin  string
+	AuthorType   string
 	CommentCount int
 }
 
@@ -648,7 +649,7 @@ func detectAIReview(nodes []aiReviewNode) string {
 	hasBotReview := false
 
 	for _, r := range nodes {
-		if !isAIReviewer(r.AuthorLogin) {
+		if !isAIReviewer(r.AuthorLogin) && r.AuthorType != "Bot" {
 			continue
 		}
 		hasBotReview = true
@@ -776,7 +777,7 @@ func fetchPRSupplemental(owner, name string, prNumbers []int) (map[int]prSupplem
 	var queryParts []string
 	for _, num := range prNumbers {
 		queryParts = append(queryParts, fmt.Sprintf(
-			`pr%d: pullRequest(number: %d) { number reviewThreads(first: 100) { totalCount nodes { isResolved } } latestReviews(first: 50) { nodes { state author { login } comments { totalCount } } } }`,
+			`pr%d: pullRequest(number: %d) { number reviewThreads(first: 100) { totalCount nodes { isResolved } } latestReviews(first: 50) { nodes { state author { login __typename } comments { totalCount } } } }`,
 			num, num,
 		))
 	}
@@ -814,7 +815,8 @@ func fetchPRSupplemental(owner, name string, prNumbers []int) (map[int]prSupplem
 				Nodes []struct {
 					State  string `json:"state"`
 					Author struct {
-						Login string `json:"login"`
+						Login    string `json:"login"`
+						Typename string `json:"__typename"`
 					} `json:"author"`
 					Comments struct {
 						TotalCount int `json:"totalCount"`
@@ -838,6 +840,7 @@ func fetchPRSupplemental(owner, name string, prNumbers []int) (map[int]prSupplem
 			aiNodes = append(aiNodes, aiReviewNode{
 				State:        r.State,
 				AuthorLogin:  r.Author.Login,
+				AuthorType:   r.Author.Typename,
 				CommentCount: r.Comments.TotalCount,
 			})
 		}

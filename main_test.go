@@ -346,6 +346,12 @@ func TestDetectAIReview(t *testing.T) {
 		{name: "dismissed bot review ignored", nodes: []aiReviewNode{
 			{State: "DISMISSED", AuthorLogin: "coderabbitai[bot]", CommentCount: 0},
 		}, want: "-"},
+		{name: "graphql bot typename without suffix", nodes: []aiReviewNode{
+			{State: "APPROVED", AuthorLogin: "coderabbitai", AuthorType: "Bot", CommentCount: 0},
+		}, want: "pass"},
+		{name: "graphql bot typename with issues", nodes: []aiReviewNode{
+			{State: "CHANGES_REQUESTED", AuthorLogin: "coderabbitai", AuthorType: "Bot", CommentCount: 3},
+		}, want: "fail"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
