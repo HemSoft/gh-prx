@@ -372,7 +372,7 @@ func buildListArgs(options listOptions) []string {
 func buildDisplayPullRequest(pullRequest pullRequest, now time.Time) displayPullRequest {
 	authorName := "-"
 	if pullRequest.Author != nil && pullRequest.Author.Login != "" {
-		authorName = pullRequest.Author.Login
+		authorName = formatAuthor(pullRequest.Author.Login)
 	}
 
 	return displayPullRequest{
@@ -553,12 +553,22 @@ func normalizeCheckState(items []checkItem) string {
 	}
 }
 
+func formatAuthor(login string) string {
+	if strings.HasPrefix(login, "app/") {
+		login = login[4:]
+	}
+	return login
+}
+
 func formatBranch(head string) string {
 	if head == "" {
 		return "-"
 	}
 	if idx := strings.LastIndex(head, "/"); idx >= 0 {
-		return head[idx+1:]
+		head = head[idx+1:]
+	}
+	if len(head) > 16 {
+		head = head[:15] + "…"
 	}
 	return head
 }

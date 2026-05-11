@@ -360,14 +360,33 @@ func TestFormatBranch(t *testing.T) {
 	if got := formatBranch("feature/test"); got != "test" {
 		t.Fatalf("expected 'test', got %q", got)
 	}
-	if got := formatBranch("dependabot/npm_and_yarn/lint-staged-17.0.4"); got != "lint-staged-17.0.4" {
-		t.Fatalf("expected 'lint-staged-17.0.4', got %q", got)
+	if got := formatBranch("dependabot/npm_and_yarn/lint-staged-17.0.4"); got != "lint-staged-17.…" {
+		t.Fatalf("expected truncated branch, got %q", got)
 	}
 	if got := formatBranch("main"); got != "main" {
 		t.Fatalf("expected 'main', got %q", got)
 	}
 	if got := formatBranch(""); got != "-" {
 		t.Fatalf("expected '-', got %q", got)
+	}
+	if got := formatBranch("feature/exactly16chars"); len(got) <= 16 {
+		// 16 chars fits without truncation
+	}
+}
+
+func TestFormatAuthor(t *testing.T) {
+	tests := []struct {
+		input, want string
+	}{
+		{"app/dependabot", "dependabot"},
+		{"app/renovate", "renovate"},
+		{"octocat", "octocat"},
+		{"app/", ""},
+	}
+	for _, tc := range tests {
+		if got := formatAuthor(tc.input); got != tc.want {
+			t.Fatalf("formatAuthor(%q) = %q, want %q", tc.input, got, tc.want)
+		}
 	}
 }
 
