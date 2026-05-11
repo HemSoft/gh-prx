@@ -12,8 +12,8 @@ func TestParseChangelogOptionsDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if options.limit != 5 {
-		t.Fatalf("expected limit 5, got %d", options.limit)
+	if options.limit != 1 {
+		t.Fatalf("expected limit 1, got %d", options.limit)
 	}
 	if options.version != "" {
 		t.Fatalf("expected empty version, got %q", options.version)
@@ -212,7 +212,7 @@ func TestExecuteChangelogEmpty(t *testing.T) {
 	defer func() { fetchReleasesFunc = saved }()
 
 	var buf bytes.Buffer
-	err := executeChangelog(changelogOptions{limit: 5}, &buf)
+	err := executeChangelog(changelogOptions{limit: 1}, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -26,8 +26,8 @@ func parseChangelogOptions(args []string, stderr io.Writer) (changelogOptions, e
 		writeChangelogUsage(stderr)
 	}
 
-	flags.IntVar(&options.limit, "limit", 5, "Number of releases to show")
-	flags.IntVar(&options.limit, "L", 5, "Number of releases to show")
+	flags.IntVar(&options.limit, "limit", 1, "Number of releases to show")
+	flags.IntVar(&options.limit, "L", 1, "Number of releases to show")
 	flags.StringVar(&options.version, "version", "", "Show a specific version (e.g. v0.3.0 or 0.3.0)")
 
 	if err := flags.Parse(args); err != nil {
@@ -193,6 +193,6 @@ const changelogUsage = `Usage:
 Show release notes for gh-prx versions.
 
 Flags:
-  -L, --limit int        Number of releases to show (default 5)
+  -L, --limit int        Number of releases to show (default 1)
       --version string   Show a specific version (e.g. v0.3.0 or 0.3.0)
 `
