@@ -206,7 +206,7 @@ func TestMapAtmNode(t *testing.T) {
 		HeadRefName:    "feature/users",
 		BaseRefName:    "main",
 		URL:            "https://github.com/Org/repo/pull/7",
-		Author:         &author{Login: "georufino"},
+		Author:         &author{Login: "georufino", Name: "Geo Rufino"},
 	}
 	node.Repository.NameWithOwner = "Org/repo"
 	node.Commits.Nodes = []struct {
@@ -302,8 +302,8 @@ func TestMapAtmNode(t *testing.T) {
 	if dp.Comments != "1/2" {
 		t.Fatalf("expected comments 1/2, got %q", dp.Comments)
 	}
-	if dp.Author != "georufino" {
-		t.Fatalf("expected author georufino, got %q", dp.Author)
+	if dp.Author != "Geo Rufino" {
+		t.Fatalf("expected author 'Geo Rufino', got %q", dp.Author)
 	}
 	if dp.Updated != "3h" {
 		t.Fatalf("expected updated 3h, got %q", dp.Updated)

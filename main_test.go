@@ -59,7 +59,7 @@ func TestBuildDisplayPullRequestNormalizesFields(t *testing.T) {
 		HeadRefName:    "feature/prx",
 		BaseRefName:    "main",
 		URL:            "https://github.com/HemSoft/gh-prx/pull/42",
-		Author:         &author{Login: "HemSoft"},
+		Author:         &author{Login: "HemSoft", Name: "Franz Hemmer"},
 		StatusCheckRollup: []checkItem{
 			{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "SUCCESS"},
 		},
@@ -104,7 +104,7 @@ func TestBuildDisplayPullRequestNormalizesFields(t *testing.T) {
 		t.Fatalf("unexpected updated column %q", got.Updated)
 	}
 
-	if got.Author != "HemSoft" {
+	if got.Author != "Franz Hemmer" {
 		t.Fatalf("unexpected author %q", got.Author)
 	}
 }
@@ -461,16 +461,19 @@ func TestFormatBranch(t *testing.T) {
 
 func TestFormatAuthor(t *testing.T) {
 	tests := []struct {
-		input, want string
+		login, name, want string
 	}{
-		{"app/dependabot", "dependabot"},
-		{"app/renovate", "renovate"},
-		{"octocat", "octocat"},
-		{"app/", ""},
+		{"app/dependabot", "", "dependabot"},
+		{"app/renovate", "", "renovate"},
+		{"octocat", "", "octocat"},
+		{"app/", "", ""},
+		{"fhemmerrelias", "Franz Hemmer", "Franz Hemmer"},
+		{"Jeff-Buda-at-Relias", "Jeff Buda", "Jeff Buda"},
+		{"octocat", "The Octocat", "The Octocat"},
 	}
 	for _, tc := range tests {
-		if got := formatAuthor(tc.input); got != tc.want {
-			t.Fatalf("formatAuthor(%q) = %q, want %q", tc.input, got, tc.want)
+		if got := formatAuthor(tc.login, tc.name); got != tc.want {
+			t.Fatalf("formatAuthor(%q, %q) = %q, want %q", tc.login, tc.name, got, tc.want)
 		}
 	}
 }

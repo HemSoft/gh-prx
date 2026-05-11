@@ -61,6 +61,7 @@ type pullRequest struct {
 
 type author struct {
 	Login string `json:"login"`
+	Name  string `json:"name"`
 }
 
 type review struct {
@@ -373,7 +374,7 @@ func buildListArgs(options listOptions) []string {
 func buildDisplayPullRequest(pullRequest pullRequest, now time.Time) displayPullRequest {
 	authorName := "-"
 	if pullRequest.Author != nil && pullRequest.Author.Login != "" {
-		authorName = formatAuthor(pullRequest.Author.Login)
+		authorName = formatAuthor(pullRequest.Author.Login, pullRequest.Author.Name)
 	}
 
 	return displayPullRequest{
@@ -554,7 +555,10 @@ func normalizeCheckState(items []checkItem) string {
 	}
 }
 
-func formatAuthor(login string) string {
+func formatAuthor(login, name string) string {
+	if name != "" {
+		return name
+	}
 	if strings.HasPrefix(login, "app/") {
 		login = login[4:]
 	}

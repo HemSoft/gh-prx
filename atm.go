@@ -190,7 +190,7 @@ func buildAtmNeedsReviewQueries(org, login string) []string {
 const atmPRFieldsFragment = `
         number
         title
-        author { login }
+        author { login ... on User { name } }
         state
         isDraft
         reviewDecision
@@ -400,7 +400,7 @@ func userApprovedPR(node atmPullRequestNode, login string) bool {
 func mapAtmNode(node atmPullRequestNode, now time.Time) displayPullRequest {
 	authorName := "-"
 	if node.Author != nil && node.Author.Login != "" {
-		authorName = node.Author.Login
+		authorName = formatAuthor(node.Author.Login, node.Author.Name)
 	}
 
 	// Extract repo short name from "owner/name"
