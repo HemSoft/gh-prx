@@ -4,9 +4,9 @@ A GitHub CLI extension that supercharges `gh pr list` with a richer, color-coded
 
 ```
 #    Title                                             Author         State  Review    AI    Appv  Checks   Cmts   Branch                 Updated
-#12  RPLAT-18678: Migrate user-groups to .NET 10       Saiprasa1994   open   approved  pass  2     pending  19/19  feature/RPLAT-18678    23h
-#10  .net 10 upgradation                               Aparna-Relias  open   review    -     0     fail     -      feature/RPLAT-8516     17d
-#5   feat(user-groups): Add golden-path IaC structure  jomartin1191   open   review    fail  0     pass     2/4    golden-path-alignment  4mo
+#12  PLAT-18678: Migrate user-groups to .NET 10        jdoe           open   approved  pass  2     pending  19/19  feature/PLAT-18678     23h
+#10  .net 10 upgradation                               asmith         open   review    -     0     fail     -      feature/PLAT-8516      17d
+#5   feat(user-groups): Add golden-path IaC structure  bclark         open   review    fail  0     pass     2/4    golden-path-alignment  4mo
 ```
 
 ## Installation
@@ -79,9 +79,9 @@ gh prx list --json
 An org-wide view of PRs that need your attention — no more checking each repo individually.
 
 ```
-#    Title                                       Repo       Author         State  Review  AI    Appv  Checks  Cmts   Updated
-#69  feat: add repo governance (CI lint, Cop...  ai-skills  fhemmerrelias  open   review  fail  0     fail    0/1    2d
-#68  feat: add contract-testing skill for Pa...  ai-skills  fhemmerrelias  open   review  fail  0     pass    12/12  2d
+#    Title                                       Repo       Author    State  Review  AI    Appv  Checks  Cmts   Updated
+#42  feat: add repo governance (CI lint, Cop...  my-app     jdoe      open   review  fail  0     fail    0/1    2d
+#41  feat: add contract-testing for PactNet...   my-app     jdoe      open   review  fail  0     pass    12/12  2d
 ```
 
 By default, shows open PRs you authored across the org. Use `--review-required` to see PRs awaiting your review.
@@ -101,7 +101,7 @@ By default, shows open PRs you authored across the org. Use `--review-required` 
 gh prx atm                              # my PRs across current org
 gh prx atm --org HemSoft                # my PRs in a specific org
 gh prx atm --review-required            # PRs awaiting my review
-gh prx atm --org Relias -r --limit 10   # review requests, capped
+gh prx atm --org AcmeCorp -r --limit 10   # review requests, capped
 gh prx atm --json                       # machine-readable output
 ```
 

@@ -53,13 +53,13 @@ func TestParseAtmOptionsAllFlags(t *testing.T) {
 
 func TestParseAtmOptionsShortFlags(t *testing.T) {
 	var stderr bytes.Buffer
-	args := []string{"-o", "Relias", "-L", "5", "-r"}
+	args := []string{"-o", "AcmeCorp", "-L", "5", "-r"}
 	options, err := parseAtmOptions(args, &stderr)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if options.org != "Relias" {
-		t.Fatalf("expected org Relias, got %q", options.org)
+	if options.org != "AcmeCorp" {
+		t.Fatalf("expected org AcmeCorp, got %q", options.org)
 	}
 	if options.limit != 5 {
 		t.Fatalf("expected limit 5, got %d", options.limit)
@@ -103,24 +103,24 @@ func TestParseAtmOptionsHelp(t *testing.T) {
 }
 
 func TestBuildAtmSearchQueryAuthor(t *testing.T) {
-	got := buildAtmSearchQuery("HemSoft", "georufino", false)
-	want := "is:pr is:open author:georufino org:HemSoft"
+	got := buildAtmSearchQuery("HemSoft", "octocat", false)
+	want := "is:pr is:open author:octocat org:HemSoft"
 	if got != want {
 		t.Fatalf("expected %q, got %q", want, got)
 	}
 }
 
 func TestBuildAtmSearchQueryReviewRequired(t *testing.T) {
-	got := buildAtmSearchQuery("Relias", "georufino", true)
-	want := "is:pr is:open review-requested:georufino org:Relias"
+	got := buildAtmSearchQuery("AcmeCorp", "octocat", true)
+	want := "is:pr is:open review-requested:octocat org:AcmeCorp"
 	if got != want {
 		t.Fatalf("expected %q, got %q", want, got)
 	}
 }
 
 func TestBuildAtmGraphQLQuery(t *testing.T) {
-	query := buildAtmGraphQLQuery("is:pr is:open author:georufino org:HemSoft", 10)
-	if !strings.Contains(query, `"is:pr is:open author:georufino org:HemSoft"`) {
+	query := buildAtmGraphQLQuery("is:pr is:open author:octocat org:HemSoft", 10)
+	if !strings.Contains(query, `"is:pr is:open author:octocat org:HemSoft"`) {
 		t.Fatal("expected search query in GraphQL")
 	}
 	if !strings.Contains(query, "first: 10") {
@@ -153,7 +153,7 @@ func TestParseAtmSearchResponse(t *testing.T) {
 					{
 						"number": 42,
 						"title": "Fix login",
-						"author": {"login": "georufino"},
+						"author": {"login": "octocat"},
 						"state": "OPEN",
 						"isDraft": false,
 						"reviewDecision": "APPROVED",
@@ -206,7 +206,7 @@ func TestMapAtmNode(t *testing.T) {
 		HeadRefName:    "feature/users",
 		BaseRefName:    "main",
 		URL:            "https://github.com/Org/repo/pull/7",
-		Author:         &author{Login: "georufino", Name: "Geo Rufino"},
+		Author:         &author{Login: "octocat", Name: "The Octocat"},
 	}
 	node.Repository.NameWithOwner = "Org/repo"
 	node.Commits.Nodes = []struct {
@@ -302,8 +302,8 @@ func TestMapAtmNode(t *testing.T) {
 	if dp.Comments != "1/2" {
 		t.Fatalf("expected comments 1/2, got %q", dp.Comments)
 	}
-	if dp.Author != "Geo Rufino" {
-		t.Fatalf("expected author 'Geo Rufino', got %q", dp.Author)
+	if dp.Author != "The Octocat" {
+		t.Fatalf("expected author 'The Octocat', got %q", dp.Author)
 	}
 	if dp.Updated != "3h" {
 		t.Fatalf("expected updated 3h, got %q", dp.Updated)
@@ -341,33 +341,33 @@ func TestMapAtmNodeNoChecks(t *testing.T) {
 
 func TestRenderAtmTableEmpty(t *testing.T) {
 	var buf bytes.Buffer
-	err := renderAtmTable(&buf, "HemSoft", "georufino", atmOptions{}, nil)
+	err := renderAtmTable(&buf, "HemSoft", "octocat", atmOptions{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(buf.String(), "No PRs needing review from georufino in HemSoft") {
+	if !strings.Contains(buf.String(), "No PRs needing review from octocat in HemSoft") {
 		t.Fatalf("unexpected empty message: %q", buf.String())
 	}
 }
 
 func TestRenderAtmTableEmptyAuthored(t *testing.T) {
 	var buf bytes.Buffer
-	err := renderAtmTable(&buf, "HemSoft", "georufino", atmOptions{authored: true}, nil)
+	err := renderAtmTable(&buf, "HemSoft", "octocat", atmOptions{authored: true}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(buf.String(), "No open PRs authored by georufino in HemSoft") {
+	if !strings.Contains(buf.String(), "No open PRs authored by octocat in HemSoft") {
 		t.Fatalf("unexpected empty message: %q", buf.String())
 	}
 }
 
 func TestRenderAtmTableEmptyReviewRequired(t *testing.T) {
 	var buf bytes.Buffer
-	err := renderAtmTable(&buf, "Relias", "user", atmOptions{reviewRequired: true}, nil)
+	err := renderAtmTable(&buf, "AcmeCorp", "user", atmOptions{reviewRequired: true}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(buf.String(), "No open PRs requesting review from user in Relias") {
+	if !strings.Contains(buf.String(), "No open PRs requesting review from user in AcmeCorp") {
 		t.Fatalf("unexpected empty message: %q", buf.String())
 	}
 }
@@ -486,21 +486,21 @@ func TestParseAtmOptionsAuthoredShort(t *testing.T) {
 }
 
 func TestBuildAtmNeedsReviewQueries(t *testing.T) {
-	queries := buildAtmNeedsReviewQueries("Relias", "fhemmer")
+	queries := buildAtmNeedsReviewQueries("AcmeCorp", "jdoe")
 	if len(queries) != 3 {
 		t.Fatalf("expected 3 queries, got %d", len(queries))
 	}
-	if !strings.Contains(queries[0], "review-requested:fhemmer") {
+	if !strings.Contains(queries[0], "review-requested:jdoe") {
 		t.Fatalf("query 0 should contain review-requested, got %q", queries[0])
 	}
-	if !strings.Contains(queries[1], "assignee:fhemmer") || !strings.Contains(queries[1], "-author:fhemmer") {
+	if !strings.Contains(queries[1], "assignee:jdoe") || !strings.Contains(queries[1], "-author:jdoe") {
 		t.Fatalf("query 1 should contain assignee and -author, got %q", queries[1])
 	}
-	if !strings.Contains(queries[2], "reviewed-by:fhemmer") {
+	if !strings.Contains(queries[2], "reviewed-by:jdoe") {
 		t.Fatalf("query 2 should contain reviewed-by, got %q", queries[2])
 	}
 	for _, q := range queries {
-		if !strings.Contains(q, "org:Relias") {
+		if !strings.Contains(q, "org:AcmeCorp") {
 			t.Fatalf("query should contain org, got %q", q)
 		}
 	}

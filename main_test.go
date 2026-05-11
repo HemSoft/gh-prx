@@ -59,7 +59,7 @@ func TestBuildDisplayPullRequestNormalizesFields(t *testing.T) {
 		HeadRefName:    "feature/prx",
 		BaseRefName:    "main",
 		URL:            "https://github.com/HemSoft/gh-prx/pull/42",
-		Author:         &author{Login: "HemSoft", Name: "Franz Hemmer"},
+		Author:         &author{Login: "HemSoft", Name: "Jane Doe"},
 		StatusCheckRollup: []checkItem{
 			{Typename: "CheckRun", Status: "COMPLETED", Conclusion: "SUCCESS"},
 		},
@@ -104,7 +104,7 @@ func TestBuildDisplayPullRequestNormalizesFields(t *testing.T) {
 		t.Fatalf("unexpected updated column %q", got.Updated)
 	}
 
-	if got.Author != "Franz Hemmer" {
+	if got.Author != "Jane Doe" {
 		t.Fatalf("unexpected author %q", got.Author)
 	}
 }
@@ -467,8 +467,8 @@ func TestFormatAuthor(t *testing.T) {
 		{"app/renovate", "", "renovate"},
 		{"octocat", "", "octocat"},
 		{"app/", "", ""},
-		{"fhemmerrelias", "Franz Hemmer", "Franz Hemmer"},
-		{"Jeff-Buda-at-Relias", "Jeff Buda", "Jeff Buda"},
+		{"jdoe-work", "Jane Doe", "Jane Doe"},
+		{"bsmith-work", "Bob Smith", "Bob Smith"},
 		{"octocat", "The Octocat", "The Octocat"},
 	}
 	for _, tc := range tests {
