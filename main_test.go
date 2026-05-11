@@ -342,9 +342,10 @@ func TestExtractReportedContextsEmpty(t *testing.T) {
 
 func TestDetectAIReview(t *testing.T) {
 	tests := []struct {
-		name  string
-		nodes []aiReviewNode
-		want  string
+		name    string
+		nodes   []aiReviewNode
+		threads []aiReviewThread
+		want    string
 	}{
 		{name: "nil", nodes: nil, want: "-"},
 		{name: "empty", nodes: []aiReviewNode{}, want: "-"},
@@ -360,12 +361,35 @@ func TestDetectAIReview(t *testing.T) {
 		{name: "copilot-pull-request-reviewer no comments", nodes: []aiReviewNode{
 			{State: "COMMENTED", AuthorLogin: "copilot-pull-request-reviewer", CommentCount: 0},
 		}, want: "pass"},
-		{name: "bot with comments", nodes: []aiReviewNode{
+		{name: "bot with comments no threads", nodes: []aiReviewNode{
 			{State: "COMMENTED", AuthorLogin: "coderabbitai[bot]", CommentCount: 3},
+		}, want: "fail"},
+		{name: "bot with comments all threads resolved", nodes: []aiReviewNode{
+			{State: "COMMENTED", AuthorLogin: "coderabbitai[bot]", CommentCount: 2},
+		}, threads: []aiReviewThread{
+			{AuthorLogin: "coderabbitai[bot]", IsResolved: true},
+			{AuthorLogin: "coderabbitai[bot]", IsResolved: true},
+		}, want: "pass"},
+		{name: "bot with comments some threads unresolved", nodes: []aiReviewNode{
+			{State: "COMMENTED", AuthorLogin: "coderabbitai[bot]", CommentCount: 2},
+		}, threads: []aiReviewThread{
+			{AuthorLogin: "coderabbitai[bot]", IsResolved: true},
+			{AuthorLogin: "coderabbitai[bot]", IsResolved: false},
+		}, want: "fail"},
+		{name: "bot with comments only human threads resolved", nodes: []aiReviewNode{
+			{State: "COMMENTED", AuthorLogin: "coderabbitai[bot]", CommentCount: 2},
+		}, threads: []aiReviewThread{
+			{AuthorLogin: "human-reviewer", IsResolved: true},
 		}, want: "fail"},
 		{name: "bot changes requested", nodes: []aiReviewNode{
 			{State: "CHANGES_REQUESTED", AuthorLogin: "coderabbitai[bot]", CommentCount: 5},
 		}, want: "fail"},
+		{name: "bot changes requested all threads resolved", nodes: []aiReviewNode{
+			{State: "CHANGES_REQUESTED", AuthorLogin: "coderabbitai[bot]", CommentCount: 2},
+		}, threads: []aiReviewThread{
+			{AuthorLogin: "coderabbitai[bot]", IsResolved: true},
+			{AuthorLogin: "coderabbitai[bot]", IsResolved: true},
+		}, want: "pass"},
 		{name: "mixed bot approved and human", nodes: []aiReviewNode{
 			{State: "APPROVED", AuthorLogin: "coderabbitai[bot]", CommentCount: 0},
 			{State: "CHANGES_REQUESTED", AuthorLogin: "human-reviewer", CommentCount: 2},
@@ -374,6 +398,12 @@ func TestDetectAIReview(t *testing.T) {
 			{State: "APPROVED", AuthorLogin: "coderabbitai[bot]", CommentCount: 0},
 			{State: "CHANGES_REQUESTED", AuthorLogin: "copilot[bot]", CommentCount: 1},
 		}, want: "fail"},
+		{name: "issues override approval but threads resolved", nodes: []aiReviewNode{
+			{State: "APPROVED", AuthorLogin: "coderabbitai[bot]", CommentCount: 0},
+			{State: "CHANGES_REQUESTED", AuthorLogin: "copilot[bot]", CommentCount: 1},
+		}, threads: []aiReviewThread{
+			{AuthorLogin: "copilot[bot]", IsResolved: true},
+		}, want: "pass"},
 		{name: "dismissed bot review ignored", nodes: []aiReviewNode{
 			{State: "DISMISSED", AuthorLogin: "coderabbitai[bot]", CommentCount: 0},
 		}, want: "-"},
@@ -383,10 +413,28 @@ func TestDetectAIReview(t *testing.T) {
 		{name: "graphql bot typename with issues", nodes: []aiReviewNode{
 			{State: "CHANGES_REQUESTED", AuthorLogin: "coderabbitai", AuthorType: "Bot", CommentCount: 3},
 		}, want: "fail"},
+		{name: "graphql bot typename issues all resolved", nodes: []aiReviewNode{
+			{State: "CHANGES_REQUESTED", AuthorLogin: "coderabbitai", AuthorType: "Bot", CommentCount: 3},
+		}, threads: []aiReviewThread{
+			{AuthorLogin: "coderabbitai", AuthorType: "Bot", IsResolved: true},
+			{AuthorLogin: "coderabbitai", AuthorType: "Bot", IsResolved: true},
+		}, want: "pass"},
+		{name: "thread with empty author not counted", nodes: []aiReviewNode{
+			{State: "COMMENTED", AuthorLogin: "copilot[bot]", CommentCount: 1},
+		}, threads: []aiReviewThread{
+			{AuthorLogin: "", IsResolved: true},
+		}, want: "fail"},
+		{name: "mixed ai bots one resolved one unresolved", nodes: []aiReviewNode{
+			{State: "COMMENTED", AuthorLogin: "coderabbitai[bot]", CommentCount: 1},
+			{State: "COMMENTED", AuthorLogin: "copilot[bot]", CommentCount: 1},
+		}, threads: []aiReviewThread{
+			{AuthorLogin: "coderabbitai[bot]", IsResolved: true},
+			{AuthorLogin: "copilot[bot]", IsResolved: false},
+		}, want: "fail"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := detectAIReview(tc.nodes); got != tc.want {
+			if got := detectAIReview(tc.nodes, tc.threads); got != tc.want {
 				t.Fatalf("expected %q, got %q", tc.want, got)
 			}
 		})

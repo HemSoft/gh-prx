@@ -169,7 +169,9 @@ func TestParseAtmSearchResponse(t *testing.T) {
 							{"state": "APPROVED", "author": {"login": "reviewer1"}, "comments": {"totalCount": 0}}
 						]},
 						"reviewThreads": {"totalCount": 3, "nodes": [
-							{"isResolved": true}, {"isResolved": true}, {"isResolved": false}
+							{"isResolved": true, "comments": {"nodes": []}},
+							{"isResolved": true, "comments": {"nodes": []}},
+							{"isResolved": false, "comments": {"nodes": []}}
 						]}
 					}
 				]
@@ -256,6 +258,14 @@ func TestMapAtmNode(t *testing.T) {
 	node.ReviewThreads.TotalCount = 2
 	node.ReviewThreads.Nodes = []struct {
 		IsResolved bool `json:"isResolved"`
+		Comments   struct {
+			Nodes []struct {
+				Author struct {
+					Login    string `json:"login"`
+					Typename string `json:"__typename"`
+				} `json:"author"`
+			} `json:"nodes"`
+		} `json:"comments"`
 	}{
 		{IsResolved: true}, {IsResolved: false},
 	}

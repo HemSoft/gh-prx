@@ -223,7 +223,14 @@ const atmPRFieldsFragment = `
         }
         reviewThreads(first: 100) {
           totalCount
-          nodes { isResolved }
+          nodes {
+            isResolved
+            comments(first: 1) {
+              nodes {
+                author { login __typename }
+              }
+            }
+          }
         }
         approvedReviews: reviews(states: [APPROVED], last: 50) {
           nodes {
@@ -299,6 +306,14 @@ type atmPullRequestNode struct {
 		TotalCount int `json:"totalCount"`
 		Nodes      []struct {
 			IsResolved bool `json:"isResolved"`
+			Comments   struct {
+				Nodes []struct {
+					Author struct {
+						Login    string `json:"login"`
+						Typename string `json:"__typename"`
+					} `json:"author"`
+				} `json:"nodes"`
+			} `json:"comments"`
 		} `json:"nodes"`
 	} `json:"reviewThreads"`
 	ApprovedReviews struct {
@@ -413,6 +428,21 @@ func mapAtmNode(node atmPullRequestNode, now time.Time) displayPullRequest {
 		})
 	}
 
+	// Build AI review threads with author info
+	var aiThreads []aiReviewThread
+	for _, t := range node.ReviewThreads.Nodes {
+		var login, authorType string
+		if len(t.Comments.Nodes) > 0 {
+			login = t.Comments.Nodes[0].Author.Login
+			authorType = t.Comments.Nodes[0].Author.Typename
+		}
+		aiThreads = append(aiThreads, aiReviewThread{
+			AuthorLogin: login,
+			AuthorType:  authorType,
+			IsResolved:  t.IsResolved,
+		})
+	}
+
 	// Count resolved threads
 	resolved := 0
 	for _, t := range node.ReviewThreads.Nodes {
@@ -425,7 +455,7 @@ func mapAtmNode(node atmPullRequestNode, now time.Time) displayPullRequest {
 		Resolved: resolved,
 	}
 
-	aiReview := detectAIReview(aiNodes)
+	aiReview := detectAIReview(aiNodes, aiThreads)
 	if aiReview == "" {
 		aiReview = "-"
 	}

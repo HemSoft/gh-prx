@@ -629,6 +629,13 @@ type aiReviewNode struct {
 	CommentCount int
 }
 
+// aiReviewThread holds thread resolution state and authorship for AI review detection.
+type aiReviewThread struct {
+	AuthorLogin string
+	AuthorType  string
+	IsResolved  bool
+}
+
 func formatComments(info reviewThreadInfo) string {
 	if info.Total == 0 {
 		return "-"
@@ -645,12 +652,15 @@ func isAIReviewer(login string) bool {
 	return strings.HasSuffix(login, "[bot]") || knownAIReviewers[login]
 }
 
-func detectAIReview(nodes []aiReviewNode) string {
+// detectAIReview determines the AI review status by combining review state with
+// thread resolution. A review that left comments is only "pass" when positive
+// evidence exists that all AI-authored threads have been resolved.
+func detectAIReview(reviews []aiReviewNode, threads []aiReviewThread) string {
 	hasApproval := false
 	hasIssues := false
 	hasBotReview := false
 
-	for _, r := range nodes {
+	for _, r := range reviews {
 		if !isAIReviewer(r.AuthorLogin) && r.AuthorType != "Bot" {
 			continue
 		}
@@ -675,6 +685,21 @@ func detectAIReview(nodes []aiReviewNode) string {
 		return "-"
 	}
 	if hasIssues {
+		// Only override "fail" when we have positive evidence: at least one
+		// AI-authored thread exists and all of them are resolved.
+		aiThreadCount := 0
+		for _, t := range threads {
+			if !isAIReviewer(t.AuthorLogin) && t.AuthorType != "Bot" {
+				continue
+			}
+			aiThreadCount++
+			if !t.IsResolved {
+				return "fail"
+			}
+		}
+		if aiThreadCount > 0 {
+			return "pass"
+		}
 		return "fail"
 	}
 	if hasApproval {
@@ -779,7 +804,7 @@ func fetchPRSupplemental(owner, name string, prNumbers []int) (map[int]prSupplem
 	var queryParts []string
 	for _, num := range prNumbers {
 		queryParts = append(queryParts, fmt.Sprintf(
-			`pr%d: pullRequest(number: %d) { number reviewThreads(first: 100) { totalCount nodes { isResolved } } latestReviews(first: 50) { nodes { state author { login __typename } comments { totalCount } } } approvedReviews: reviews(states: [APPROVED], last: 50) { nodes { author { login } } } }`,
+			`pr%d: pullRequest(number: %d) { number reviewThreads(first: 100) { totalCount nodes { isResolved comments(first: 1) { nodes { author { login __typename } } } } } latestReviews(first: 50) { nodes { state author { login __typename } comments { totalCount } } } approvedReviews: reviews(states: [APPROVED], last: 50) { nodes { author { login } } } }`,
 			num, num,
 		))
 	}
@@ -811,6 +836,14 @@ func fetchPRSupplemental(owner, name string, prNumbers []int) (map[int]prSupplem
 				TotalCount int `json:"totalCount"`
 				Nodes      []struct {
 					IsResolved bool `json:"isResolved"`
+					Comments   struct {
+						Nodes []struct {
+							Author struct {
+								Login    string `json:"login"`
+								Typename string `json:"__typename"`
+							} `json:"author"`
+						} `json:"nodes"`
+					} `json:"comments"`
 				} `json:"nodes"`
 			} `json:"reviewThreads"`
 			LatestReviews struct {
@@ -854,6 +887,20 @@ func fetchPRSupplemental(owner, name string, prNumbers []int) (map[int]prSupplem
 			})
 		}
 
+		var aiThreads []aiReviewThread
+		for _, t := range prData.ReviewThreads.Nodes {
+			var login, authorType string
+			if len(t.Comments.Nodes) > 0 {
+				login = t.Comments.Nodes[0].Author.Login
+				authorType = t.Comments.Nodes[0].Author.Typename
+			}
+			aiThreads = append(aiThreads, aiReviewThread{
+				AuthorLogin: login,
+				AuthorType:  authorType,
+				IsResolved:  t.IsResolved,
+			})
+		}
+
 		// Count unique approvers from all APPROVED reviews (not just latest action)
 		approverSet := make(map[string]bool)
 		for _, r := range prData.ApprovedReviews.Nodes {
@@ -867,7 +914,7 @@ func fetchPRSupplemental(owner, name string, prNumbers []int) (map[int]prSupplem
 				Total:    prData.ReviewThreads.TotalCount,
 				Resolved: resolved,
 			},
-			AIReview:  detectAIReview(aiNodes),
+			AIReview:  detectAIReview(aiNodes, aiThreads),
 			Approvals: len(approverSet),
 		}
 	}
