@@ -2,51 +2,24 @@
 
 | Status | Priority | Task | Notes |
 |--------|----------|------|-------|
-| ⏸️ | High | [Install Go locally and validate the scaffold](#install-go-locally-and-validate-the-scaffold) | Blocked: `go` is not installed in the current environment |
-| 📋 | High | [Verify `gh prx list` end-to-end](#verify-gh-prx-list-end-to-end) | Install the extension locally and test filters, JSON, and table output |
 | 📋 | High | [Design `gh prx atm` org-scoped behavior](#design-gh-prx-atm-org-scoped-behavior) | Define default org behavior, `--org`, and `--review-required` semantics |
 | 📋 | High | [Implement `gh prx atm`](#implement-gh-prx-atm) | Add `gh prx atm`, `gh prx atm --org HemSoft`, and `gh prx atm --org HemSoft --review-required` |
-| 📋 | Medium | [Add tests for `list` and `atm`](#add-tests-for-list-and-atm) | Cover flag parsing, query construction, and output formatting |
-| 📋 | Medium | [Document install and usage flows](#document-install-and-usage-flows) | Expand README with `list`, `atm`, and local install examples |
-| 📋 | Low | [Prepare release packaging](#prepare-release-packaging) | Add a release workflow and precompiled binaries for public installs |
+| 📋 | Medium | [Add tests for `atm`](#add-tests-for-atm) | Cover flag parsing, query construction, and output formatting for atm |
 | ✅ | High | Initialize public GitHub repository | 2026-05-10 - Created and pushed `HemSoft/gh-prx` |
 | ✅ | High | Scaffold Go extension for `gh prx list` | 2026-05-10 - Added README, Go module, source files, and initial tests |
+| ✅ | High | Install Go locally and validate the scaffold | 2026-05-10 - Go 1.23, all 36 tests pass |
+| ✅ | High | Verify `gh prx list` end-to-end | 2026-05-10 - Extensively tested against live repos |
+| ✅ | Medium | Add tests for `list` | 2026-05-10 - 36 tests covering formatting, normalization, and rendering |
+| ✅ | Medium | Document install and usage flows | 2026-05-10 - README fully rewritten with install, usage, and examples |
+| ✅ | Low | Prepare release packaging | 2026-05-10 - Auto-release workflow + manual release workflow, 12-platform binaries |
 
 ## Progress
 
-**Completed: 2 / 9** (22%)
+**Completed: 7 / 10** (70%)
 
 ---
 
 ## Remaining Items
-
-### Install Go locally and validate the scaffold
-
-**Location**: local development environment, `go.mod`, `main.go`, `prlist.go`, `main_test.go`
-
-**Problem**: The repository was scaffolded, but the current environment does not have the Go toolchain installed, so the extension has not been built or exercised yet.
-
-**Proposed Solution**:
-
-- Install Go 1.22 or newer locally.
-- Run `go mod tidy`, `go build`, and `go test ./...`.
-- Fix any compile or test issues that show up once the toolchain is available.
-
----
-
-### Verify `gh prx list` end-to-end
-
-**Location**: `main.go`, `prlist.go`, README usage examples
-
-**Problem**: The command shape is scaffolded, but the real UX still needs validation against live repository data.
-
-**Proposed Solution**:
-
-- Install the extension locally with `gh extension install .`.
-- Run `gh prx list` against the current repo and at least one repo with active PRs.
-- Verify table columns, truncation, relative timestamps, `--json`, and pass-through filters.
-
----
 
 ### Design `gh prx atm` org-scoped behavior
 
@@ -81,47 +54,20 @@
 
 ---
 
-### Add tests for `list` and `atm`
+### Add tests for `atm`
 
-**Location**: `main_test.go` and any new test files
+**Location**: `atm_test.go`
 
-**Problem**: The initial tests only cover a small slice of current behavior.
+**Problem**: The `atm` subcommand needs tests.
 
 **Proposed Solution**:
 
 - Add tests for subcommand routing and flag parsing.
-- Add tests for the org-scoped query builder used by `atm`.
-- Add tests for review/check/status normalization and edge-case output formatting.
-
----
-
-### Document install and usage flows
-
-**Location**: `README.md`
-
-**Problem**: The README explains the current scaffold, but it does not yet cover the future `atm` workflow or the expected development loop after Go is installed.
-
-**Proposed Solution**:
-
-- Add setup steps after Go installation.
-- Add usage examples for `gh prx list` and `gh prx atm`.
-- Document any org-scoping assumptions and the meaning of `--review-required`.
-
----
-
-### Prepare release packaging
-
-**Location**: release workflow and binary naming
-
-**Problem**: The repo is public, but users still need a convenient install path for a compiled extension release.
-
-**Proposed Solution**:
-
-- Add a release workflow for cross-platform binaries.
-- Publish assets named for GitHub CLI extension discovery.
-- Document versioning and release steps in the repository.
+- Add tests for the org-scoped query builder.
+- Add tests for review/check normalization specific to atm's cross-repo display.
 
 ## Notes
 
 - The repository and local folder were renamed from `gh-extensions` to `gh-prx` so the extension command resolves correctly to `gh prx`.
 - The current scaffold intentionally wraps GitHub CLI behavior so it can reuse existing `gh` authentication and repository context.
+- Auto-release workflow creates a new patch version on every push to `main`.
