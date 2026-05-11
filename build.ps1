@@ -12,6 +12,7 @@ Write-Host '--- test ---'
 go test ./...
 
 Write-Host '--- build ---'
-go build -ldflags "-X main.version=$tag" -o gh-prx.exe .
+$date = Get-Date -Format 'yyyy-MM-dd'
+go build -ldflags "-X main.version=$tag -X main.buildDate=$date" -o gh-prx.exe .
 
 Write-Host "`n✅ Ready — run: gh prx list"

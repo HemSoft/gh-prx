@@ -84,6 +84,7 @@ jobs:
             "windows/amd64"
             "windows/arm64"
           )
+          build_date=$(date -u +%Y-%m-%d)
           for platform in "${platforms[@]}"; do
             os="${platform%/*}"
             arch="${platform#*/}"
@@ -91,7 +92,7 @@ jobs:
             [[ "$os" == "windows" ]] && ext=".exe"
             output="dist/${os}-${arch}${ext}"
             echo "Building ${output}..."
-            GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${tag}" -o "$output" .
+            GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${tag} -X main.buildDate=${build_date}" -o "$output" .
           done
 
       - name: Create release

@@ -451,13 +451,38 @@ func TestRunVersionAPIError(t *testing.T) {
 
 func TestPrintBanner(t *testing.T) {
 	oldVersion := version
-	defer func() { version = oldVersion }()
+	oldDate := buildDate
+	defer func() { version = oldVersion; buildDate = oldDate }()
 
 	version = "v1.2.3"
+	buildDate = "2026-05-10"
+	var buf bytes.Buffer
+	printBanner(&buf)
+	if got := buf.String(); got != "gh-prx v1.2.3 (2026-05-10) by HemSoft\n" {
+		t.Fatalf("unexpected banner: %q", got)
+	}
+}
+
+func TestPrintBannerNoDate(t *testing.T) {
+	oldVersion := version
+	oldDate := buildDate
+	defer func() { version = oldVersion; buildDate = oldDate }()
+
+	version = "v1.2.3"
+	buildDate = ""
 	var buf bytes.Buffer
 	printBanner(&buf)
 	if got := buf.String(); got != "gh-prx v1.2.3 by HemSoft\n" {
-		t.Fatalf("unexpected banner: %q", got)
+		t.Fatalf("unexpected banner without date: %q", got)
+	}
+}
+
+func TestFormatVersion(t *testing.T) {
+	if got := formatVersion("v1.0.0", "2026-05-10"); got != "v1.0.0 (2026-05-10)" {
+		t.Fatalf("expected date in parens, got %q", got)
+	}
+	if got := formatVersion("v1.0.0", ""); got != "v1.0.0" {
+		t.Fatalf("expected no parens when date empty, got %q", got)
 	}
 }
 

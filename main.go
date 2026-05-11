@@ -11,8 +11,9 @@ import (
 	gh "github.com/cli/go-gh/v2"
 )
 
-// version is injected at build time via -ldflags "-X main.version=vX.Y.Z"
+// version and buildDate are injected at build time via ldflags.
 var version = "dev"
+var buildDate = ""
 
 var errHelpDisplayed = errors.New("help displayed")
 
@@ -51,7 +52,14 @@ func run(args []string, stdout io.Writer, stderr io.Writer) error {
 }
 
 func printBanner(w io.Writer) {
-	fmt.Fprintf(w, "gh-prx %s by HemSoft\n", version)
+	fmt.Fprintf(w, "gh-prx %s by HemSoft\n", formatVersion(version, buildDate))
+}
+
+func formatVersion(ver, date string) string {
+	if date != "" {
+		return fmt.Sprintf("%s (%s)", ver, date)
+	}
+	return ver
 }
 
 func runList(args []string, stdout io.Writer, stderr io.Writer) error {
@@ -151,7 +159,7 @@ func runVersionTestable(w io.Writer, ver string) error {
 		upgradeCmd = "gh extension upgrade gh-prx"
 	)
 
-	fmt.Fprintf(w, "%s %s by %s · %s\n", repo, ver, author, installCmd)
+	fmt.Fprintf(w, "%s %s by %s · %s\n", repo, formatVersion(ver, buildDate), author, installCmd)
 
 	latest, err := fetchLatestReleaseFunc(author, repo)
 	if err != nil || latest == "" {

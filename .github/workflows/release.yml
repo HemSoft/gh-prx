@@ -13,7 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Set build date
+        id: meta
+        run: echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
       - uses: cli/gh-extension-precompile@v2
         with:
           go_version_file: go.mod
-          build_flags: -ldflags "-s -w -X main.version=${{ github.ref_name }}"
+          build_flags: -ldflags "-s -w -X main.version=${{ github.ref_name }} -X main.buildDate=${{ steps.meta.outputs.date }}"
