@@ -25,24 +25,33 @@ func main() {
 
 func run(args []string, stdout io.Writer, stderr io.Writer) error {
 	if len(args) == 0 {
+		printBanner(stderr)
 		writeRootUsage(stdout)
 		return nil
 	}
 
 	switch args[0] {
 	case "help", "-h", "--help":
+		printBanner(stderr)
 		writeRootUsage(stdout)
 		return nil
 	case "version", "-v", "--version":
 		return runVersion(stdout)
 	case "list":
+		printBanner(stderr)
 		return runList(args[1:], stdout, stderr)
 	case "atm":
+		printBanner(stderr)
 		return runAtm(args[1:], stdout, stderr)
 	default:
+		printBanner(stderr)
 		writeRootUsage(stderr)
 		return fmt.Errorf("unknown subcommand %q", args[0])
 	}
+}
+
+func printBanner(w io.Writer) {
+	fmt.Fprintf(w, "gh-prx %s by HemSoft\n", version)
 }
 
 func runList(args []string, stdout io.Writer, stderr io.Writer) error {

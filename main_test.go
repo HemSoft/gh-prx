@@ -449,6 +449,61 @@ func TestRunVersionAPIError(t *testing.T) {
 	}
 }
 
+func TestPrintBanner(t *testing.T) {
+	oldVersion := version
+	defer func() { version = oldVersion }()
+
+	version = "v1.2.3"
+	var buf bytes.Buffer
+	printBanner(&buf)
+	if got := buf.String(); got != "gh-prx v1.2.3 by HemSoft\n" {
+		t.Fatalf("unexpected banner: %q", got)
+	}
+}
+
+func TestBannerOnRootUsage(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	_ = run(nil, &stdout, &stderr)
+	if !strings.Contains(stderr.String(), "gh-prx") {
+		t.Fatalf("expected banner on stderr for root usage, got %q", stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Available Commands") {
+		t.Fatalf("expected usage on stdout, got %q", stdout.String())
+	}
+}
+
+func TestBannerOnHelp(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	_ = run([]string{"--help"}, &stdout, &stderr)
+	if !strings.Contains(stderr.String(), "gh-prx") {
+		t.Fatalf("expected banner on stderr for help, got %q", stderr.String())
+	}
+}
+
+func TestNoBannerOnVersion(t *testing.T) {
+	orig := fetchLatestReleaseFunc
+	defer func() { fetchLatestReleaseFunc = orig }()
+	fetchLatestReleaseFunc = func(owner, repo string) (string, error) {
+		return "v1.0.0", nil
+	}
+
+	for _, arg := range []string{"version", "--version", "-v"} {
+		var stdout, stderr bytes.Buffer
+		_ = run([]string{arg}, &stdout, &stderr)
+		if strings.Contains(stderr.String(), "gh-prx") {
+			t.Fatalf("run(%q) should not print banner to stderr, got %q", arg, stderr.String())
+		}
+	}
+}
+
+func TestBannerOnUnknownCommand(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	_ = run([]string{"bogus"}, &stdout, &stderr)
+	if !strings.Contains(stderr.String(), "gh-prx") {
+		t.Fatalf("expected banner on stderr for unknown command, got %q", stderr.String())
+	}
+}
+
 func TestRunVersionRouting(t *testing.T) {
 	orig := fetchLatestReleaseFunc
 	defer func() { fetchLatestReleaseFunc = orig }()
