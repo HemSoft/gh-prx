@@ -28,8 +28,9 @@ func main() {
 func run(args []string, stdout io.Writer, stderr io.Writer) error {
 	// Start async update check (version subcommand does its own check)
 	isVersion := len(args) > 0 && (args[0] == "version" || args[0] == "-v" || args[0] == "--version")
+	isChangelog := len(args) > 0 && args[0] == "changelog"
 	var updateCh <-chan string
-	if !isVersion && version != "dev" {
+	if !isVersion && !isChangelog && version != "dev" {
 		updateCh = asyncUpdateCheck()
 	}
 
@@ -53,6 +54,9 @@ func run(args []string, stdout io.Writer, stderr io.Writer) error {
 		case "me":
 			printBanner(stderr)
 			err = runMe(args[1:], stdout, stderr)
+		case "changelog":
+			printBanner(stderr)
+			err = runChangelog(args[1:], stdout, stderr)
 		default:
 			printBanner(stderr)
 			writeRootUsage(stderr)
@@ -230,10 +234,11 @@ Usage:
   gh prx <command> [flags]
 
 Available Commands:
-  list      Render a denser pull request list than gh pr list
-  me        Show all your open PRs (authored + assigned) across an org
-  atm       Show open PRs across an org that need your attention
-  version   Show version, author, and update availability
+  list       Render a denser pull request list than gh pr list
+  me         Show all your open PRs (authored + assigned) across an org
+  atm        Show open PRs across an org that need your attention
+  changelog  Show release notes for recent versions
+  version    Show version, author, and update availability
 
 Examples:
   gh prx list
@@ -244,6 +249,8 @@ Examples:
   gh prx atm
   gh prx atm --org HemSoft
   gh prx atm --review-required
+  gh prx changelog
+  gh prx changelog --version 0.3.0
   gh prx version
 `
 

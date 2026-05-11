@@ -135,6 +135,18 @@ gh prx atm --org AcmeCorp -r --limit 10   # review requests, capped
 gh prx atm --json                       # machine-readable output
 ```
 
+## Changelog
+
+View release notes directly from the CLI:
+
+```bash
+gh prx changelog                     # last 5 releases
+gh prx changelog --limit 10          # last 10 releases
+gh prx changelog --version 0.3.0     # specific version
+```
+
+The currently installed version is marked with `← installed`.
+
 ## Checking for updates
 
 ```bash
