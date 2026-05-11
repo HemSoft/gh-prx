@@ -24,6 +24,7 @@ That's it. Prebuilt binaries are available for all platforms — no Go toolchain
 ```bash
 gh prx list [flags]    # enriched PR list for current repo
 gh prx atm [flags]     # org-wide PRs needing your attention
+gh prx version         # show version and check for updates (also: --version, -v)
 ```
 
 ## What `gh prx list` adds
@@ -102,6 +103,24 @@ gh prx atm --org HemSoft                # my PRs in a specific org
 gh prx atm --review-required            # PRs awaiting my review
 gh prx atm --org Relias -r --limit 10   # review requests, capped
 gh prx atm --json                       # machine-readable output
+```
+
+## Checking for updates
+
+```bash
+gh prx version
+```
+
+```
+gh-prx v0.1.2 by HemSoft · gh extension install HemSoft/gh-prx
+✓ Up to date
+```
+
+If a newer release exists:
+
+```
+gh-prx v0.1.0 by HemSoft · gh extension install HemSoft/gh-prx
+↑ v0.1.2 available · gh extension upgrade gh-prx
 ```
 
 ## Local development

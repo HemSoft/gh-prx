@@ -65,8 +65,11 @@ jobs:
 
       - name: Build cross-platform binaries
         if: steps.check.outputs.skip == 'false'
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
           mkdir -p dist
+          tag="$TAG"
           platforms=(
             "darwin/amd64"
             "darwin/arm64"
@@ -88,7 +91,7 @@ jobs:
             [[ "$os" == "windows" ]] && ext=".exe"
             output="dist/${os}-${arch}${ext}"
             echo "Building ${output}..."
-            GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "$output" .
+            GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${tag}" -o "$output" .
           done
 
       - name: Create release

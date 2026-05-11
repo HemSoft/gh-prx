@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -361,5 +362,108 @@ func TestFormatBranch(t *testing.T) {
 	}
 	if got := formatBranch(""); got != "-" {
 		t.Fatalf("expected '-', got %q", got)
+	}
+}
+
+func TestRunVersionUpToDate(t *testing.T) {
+	orig := fetchLatestReleaseFunc
+	defer func() { fetchLatestReleaseFunc = orig }()
+	fetchLatestReleaseFunc = func(owner, repo string) (string, error) {
+		return "v1.2.3", nil
+	}
+
+	var buf bytes.Buffer
+	err := runVersionTestable(&buf, "v1.2.3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "gh-prx v1.2.3 by HemSoft") {
+		t.Fatalf("expected version line, got %q", out)
+	}
+	if !strings.Contains(out, "gh extension install HemSoft/gh-prx") {
+		t.Fatalf("expected install command, got %q", out)
+	}
+	if !strings.Contains(out, "✓ Up to date") {
+		t.Fatalf("expected up-to-date indicator, got %q", out)
+	}
+}
+
+func TestRunVersionUpdateAvailable(t *testing.T) {
+	orig := fetchLatestReleaseFunc
+	defer func() { fetchLatestReleaseFunc = orig }()
+	fetchLatestReleaseFunc = func(owner, repo string) (string, error) {
+		return "v2.0.0", nil
+	}
+
+	var buf bytes.Buffer
+	err := runVersionTestable(&buf, "v1.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "↑ v2.0.0 available") {
+		t.Fatalf("expected update indicator, got %q", out)
+	}
+	if !strings.Contains(out, "gh extension upgrade gh-prx") {
+		t.Fatalf("expected upgrade command, got %q", out)
+	}
+}
+
+func TestRunVersionDevBuild(t *testing.T) {
+	orig := fetchLatestReleaseFunc
+	defer func() { fetchLatestReleaseFunc = orig }()
+	fetchLatestReleaseFunc = func(owner, repo string) (string, error) {
+		return "v0.5.0", nil
+	}
+
+	var buf bytes.Buffer
+	err := runVersionTestable(&buf, "dev")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "gh-prx dev by HemSoft") {
+		t.Fatalf("expected dev version, got %q", out)
+	}
+	if !strings.Contains(out, "⚙ Dev build · latest release: v0.5.0") {
+		t.Fatalf("expected dev build indicator, got %q", out)
+	}
+}
+
+func TestRunVersionAPIError(t *testing.T) {
+	orig := fetchLatestReleaseFunc
+	defer func() { fetchLatestReleaseFunc = orig }()
+	fetchLatestReleaseFunc = func(owner, repo string) (string, error) {
+		return "", fmt.Errorf("network error")
+	}
+
+	var buf bytes.Buffer
+	err := runVersionTestable(&buf, "v1.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "⚠ Could not check for updates") {
+		t.Fatalf("expected error fallback, got %q", out)
+	}
+}
+
+func TestRunVersionRouting(t *testing.T) {
+	orig := fetchLatestReleaseFunc
+	defer func() { fetchLatestReleaseFunc = orig }()
+	fetchLatestReleaseFunc = func(owner, repo string) (string, error) {
+		return "v1.0.0", nil
+	}
+
+	for _, arg := range []string{"version", "--version", "-v"} {
+		var buf bytes.Buffer
+		err := run([]string{arg}, &buf, &bytes.Buffer{})
+		if err != nil {
+			t.Fatalf("run(%q) returned error: %v", arg, err)
+		}
+		if !strings.Contains(buf.String(), "gh-prx") {
+			t.Fatalf("run(%q) missing version output: %q", arg, buf.String())
+		}
 	}
 }

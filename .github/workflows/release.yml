@@ -16,3 +16,4 @@ jobs:
       - uses: cli/gh-extension-precompile@v2
         with:
           go_version_file: go.mod
+          build_flags: -ldflags "-s -w -X main.version=${{ github.ref_name }}"

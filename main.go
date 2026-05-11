@@ -7,7 +7,12 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	gh "github.com/cli/go-gh/v2"
 )
+
+// version is injected at build time via -ldflags "-X main.version=vX.Y.Z"
+var version = "dev"
 
 var errHelpDisplayed = errors.New("help displayed")
 
@@ -28,6 +33,8 @@ func run(args []string, stdout io.Writer, stderr io.Writer) error {
 	case "help", "-h", "--help":
 		writeRootUsage(stdout)
 		return nil
+	case "version", "-v", "--version":
+		return runVersion(stdout)
 	case "list":
 		return runList(args[1:], stdout, stderr)
 	case "atm":
@@ -109,6 +116,51 @@ func parseListOptions(args []string, stderr io.Writer) (listOptions, error) {
 	return options, nil
 }
 
+func runVersion(w io.Writer) error {
+	return runVersionTestable(w, version)
+}
+
+func fetchLatestRelease(owner, repo string) (string, error) {
+	stdoutBuf, stderrBuf, err := gh.Exec(
+		"api", fmt.Sprintf("repos/%s/%s/releases/latest", owner, repo),
+		"--jq", ".tag_name",
+	)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", stderrBuf.String(), err)
+	}
+	return strings.TrimSpace(stdoutBuf.String()), nil
+}
+
+// fetchLatestReleaseFunc is swapped in tests to avoid real API calls.
+var fetchLatestReleaseFunc = fetchLatestRelease
+
+func runVersionTestable(w io.Writer, ver string) error {
+	const (
+		author     = "HemSoft"
+		repo       = "gh-prx"
+		installCmd = "gh extension install HemSoft/gh-prx"
+		upgradeCmd = "gh extension upgrade gh-prx"
+	)
+
+	fmt.Fprintf(w, "%s %s by %s · %s\n", repo, ver, author, installCmd)
+
+	latest, err := fetchLatestReleaseFunc(author, repo)
+	if err != nil || latest == "" {
+		fmt.Fprintf(w, "⚠ Could not check for updates\n")
+		return nil
+	}
+
+	if ver == "dev" {
+		fmt.Fprintf(w, "⚙ Dev build · latest release: %s\n", latest)
+	} else if latest != ver {
+		fmt.Fprintf(w, "↑ %s available · %s\n", latest, upgradeCmd)
+	} else {
+		fmt.Fprintf(w, "✓ Up to date\n")
+	}
+
+	return nil
+}
+
 func writeRootUsage(w io.Writer) {
 	fmt.Fprint(w, rootUsage)
 }
@@ -123,8 +175,9 @@ Usage:
   gh prx <command> [flags]
 
 Available Commands:
-  list    Render a denser pull request list than gh pr list
-  atm     Show open PRs across an org that need your attention
+  list      Render a denser pull request list than gh pr list
+  atm       Show open PRs across an org that need your attention
+  version   Show version, author, and update availability
 
 Examples:
   gh prx list
@@ -133,6 +186,7 @@ Examples:
   gh prx atm
   gh prx atm --org HemSoft
   gh prx atm --review-required
+  gh prx version
 `
 
 const listUsage = `Usage:
