@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	gh "github.com/cli/go-gh/v2"
 )
@@ -25,34 +26,68 @@ func main() {
 }
 
 func run(args []string, stdout io.Writer, stderr io.Writer) error {
+	// Start async update check (version subcommand does its own check)
+	isVersion := len(args) > 0 && (args[0] == "version" || args[0] == "-v" || args[0] == "--version")
+	var updateCh <-chan string
+	if !isVersion && version != "dev" {
+		updateCh = asyncUpdateCheck()
+	}
+
+	var err error
 	if len(args) == 0 {
 		printBanner(stderr)
 		writeRootUsage(stdout)
-		return nil
+	} else {
+		switch args[0] {
+		case "help", "-h", "--help":
+			printBanner(stderr)
+			writeRootUsage(stdout)
+		case "version", "-v", "--version":
+			err = runVersion(stdout)
+		case "list":
+			printBanner(stderr)
+			err = runList(args[1:], stdout, stderr)
+		case "atm":
+			printBanner(stderr)
+			err = runAtm(args[1:], stdout, stderr)
+		default:
+			printBanner(stderr)
+			writeRootUsage(stderr)
+			err = fmt.Errorf("unknown subcommand %q", args[0])
+		}
 	}
 
-	switch args[0] {
-	case "help", "-h", "--help":
-		printBanner(stderr)
-		writeRootUsage(stdout)
-		return nil
-	case "version", "-v", "--version":
-		return runVersion(stdout)
-	case "list":
-		printBanner(stderr)
-		return runList(args[1:], stdout, stderr)
-	case "atm":
-		printBanner(stderr)
-		return runAtm(args[1:], stdout, stderr)
-	default:
-		printBanner(stderr)
-		writeRootUsage(stderr)
-		return fmt.Errorf("unknown subcommand %q", args[0])
-	}
+	showUpdateNotice(stderr, updateCh)
+	return err
 }
 
 func printBanner(w io.Writer) {
 	fmt.Fprintf(w, "gh-prx %s by HemSoft\n", formatVersion(version, buildDate))
+}
+
+func asyncUpdateCheck() <-chan string {
+	ch := make(chan string, 1)
+	go func() {
+		latest, err := fetchLatestReleaseFunc("HemSoft", "gh-prx")
+		if err == nil && latest != "" && latest != version {
+			ch <- latest
+		}
+		close(ch)
+	}()
+	return ch
+}
+
+func showUpdateNotice(w io.Writer, ch <-chan string) {
+	if ch == nil {
+		return
+	}
+	select {
+	case latest, ok := <-ch:
+		if ok && latest != "" {
+			fmt.Fprintf(w, "↑ %s available · gh extension upgrade gh-prx\n", latest)
+		}
+	case <-time.After(500 * time.Millisecond):
+	}
 }
 
 func formatVersion(ver, date string) string {

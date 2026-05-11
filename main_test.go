@@ -535,6 +535,85 @@ func TestBannerOnUnknownCommand(t *testing.T) {
 	}
 }
 
+func TestUpgradeNoticeShown(t *testing.T) {
+	oldVersion := version
+	defer func() { version = oldVersion }()
+	version = "v1.0.0"
+
+	orig := fetchLatestReleaseFunc
+	defer func() { fetchLatestReleaseFunc = orig }()
+	fetchLatestReleaseFunc = func(owner, repo string) (string, error) {
+		return "v2.0.0", nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	_ = run(nil, &stdout, &stderr)
+	if !strings.Contains(stderr.String(), "↑ v2.0.0 available") {
+		t.Fatalf("expected upgrade notice on stderr, got %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "gh extension upgrade gh-prx") {
+		t.Fatalf("expected upgrade command on stderr, got %q", stderr.String())
+	}
+}
+
+func TestNoUpgradeNoticeWhenCurrent(t *testing.T) {
+	oldVersion := version
+	defer func() { version = oldVersion }()
+	version = "v1.0.0"
+
+	orig := fetchLatestReleaseFunc
+	defer func() { fetchLatestReleaseFunc = orig }()
+	fetchLatestReleaseFunc = func(owner, repo string) (string, error) {
+		return "v1.0.0", nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	_ = run(nil, &stdout, &stderr)
+	if strings.Contains(stderr.String(), "available") {
+		t.Fatalf("should not show upgrade notice when up-to-date, got %q", stderr.String())
+	}
+}
+
+func TestNoUpgradeNoticeOnVersionCmd(t *testing.T) {
+	oldVersion := version
+	defer func() { version = oldVersion }()
+	version = "v1.0.0"
+
+	apiCalls := 0
+	orig := fetchLatestReleaseFunc
+	defer func() { fetchLatestReleaseFunc = orig }()
+	fetchLatestReleaseFunc = func(owner, repo string) (string, error) {
+		apiCalls++
+		return "v2.0.0", nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	_ = run([]string{"version"}, &stdout, &stderr)
+	if apiCalls != 1 {
+		t.Fatalf("expected 1 API call (from version cmd only), got %d", apiCalls)
+	}
+}
+
+func TestShowUpdateNotice(t *testing.T) {
+	ch := make(chan string, 1)
+	ch <- "v2.0.0"
+	close(ch)
+
+	var buf bytes.Buffer
+	showUpdateNotice(&buf, ch)
+	if !strings.Contains(buf.String(), "↑ v2.0.0 available") {
+		t.Fatalf("expected upgrade notice, got %q", buf.String())
+	}
+}
+
+func TestShowUpdateNoticeNil(t *testing.T) {
+	var buf bytes.Buffer
+	showUpdateNotice(&buf, nil)
+	if buf.Len() != 0 {
+		t.Fatalf("expected no output for nil channel, got %q", buf.String())
+	}
+}
+
 func TestRunVersionRouting(t *testing.T) {
 	orig := fetchLatestReleaseFunc
 	defer func() { fetchLatestReleaseFunc = orig }()
