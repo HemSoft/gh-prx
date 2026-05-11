@@ -482,6 +482,7 @@ func mapAtmNode(node atmPullRequestNode, now time.Time) displayPullRequest {
 		Updated:   formatRelativeTime(node.UpdatedAt, now),
 		URL:       node.URL,
 		Repo:      repoName,
+		updatedAt: node.UpdatedAt,
 	}
 }
 

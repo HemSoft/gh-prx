@@ -23,6 +23,7 @@ That's it. Prebuilt binaries are available for all platforms — no Go toolchain
 
 ```bash
 gh prx list [flags]    # enriched PR list for current repo
+gh prx me [flags]      # all your open PRs (authored + assigned) across an org
 gh prx atm [flags]     # org-wide PRs needing your attention
 gh prx version         # show version and check for updates (also: --version, -v)
 ```
@@ -72,6 +73,35 @@ gh prx list --repo owner/repo --limit 10
 gh prx list --label bug --label urgent
 gh prx list --search "review:required status:success"
 gh prx list --json
+```
+
+## What `gh prx me` adds
+
+All your open PRs — authored or assigned — across every repo in the org.
+
+```
+#    Title                                       Repo       Author    State  Review  AI    Appv  Checks  Cmts   Updated
+#42  feat: add repo governance (CI lint, Cop...  my-app     jdoe      open   review  fail  0     fail    0/1    2d
+#15  fix: update auth token refresh logic        api        bsmith    open   review  -     0     pass    3/3    5d
+```
+
+Works with both organizations and personal accounts.
+
+### `me` flags
+
+| Flag | Description |
+|------|-------------|
+| `-o, --org ORG` | Organization or user to search (default: inferred from current repo) |
+| `-L, --limit N` | Maximum PRs to show (default: 30) |
+| `--json` | Output as JSON |
+
+### `me` examples
+
+```bash
+gh prx me                           # my PRs across current org
+gh prx me --org AcmeCorp            # my PRs in a specific org
+gh prx me --limit 10                # capped at 10
+gh prx me --json                    # machine-readable output
 ```
 
 ## What `gh prx atm` adds

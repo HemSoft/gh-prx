@@ -94,6 +94,8 @@ type displayPullRequest struct {
 	Updated   string `json:"updated"`
 	URL       string `json:"url"`
 	Repo      string `json:"repo,omitempty"`
+
+	updatedAt time.Time // unexported; used for sorting
 }
 
 type tableCell struct {
@@ -390,6 +392,7 @@ func buildDisplayPullRequest(pullRequest pullRequest, now time.Time) displayPull
 		Branch:    formatBranch(pullRequest.HeadRefName),
 		Updated:   formatRelativeTime(pullRequest.UpdatedAt, now),
 		URL:       pullRequest.URL,
+		updatedAt: pullRequest.UpdatedAt,
 	}
 }
 

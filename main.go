@@ -50,6 +50,9 @@ func run(args []string, stdout io.Writer, stderr io.Writer) error {
 		case "atm":
 			printBanner(stderr)
 			err = runAtm(args[1:], stdout, stderr)
+		case "me":
+			printBanner(stderr)
+			err = runMe(args[1:], stdout, stderr)
 		default:
 			printBanner(stderr)
 			writeRootUsage(stderr)
@@ -228,6 +231,7 @@ Usage:
 
 Available Commands:
   list      Render a denser pull request list than gh pr list
+  me        Show all your open PRs (authored + assigned) across an org
   atm       Show open PRs across an org that need your attention
   version   Show version, author, and update availability
 
@@ -235,6 +239,8 @@ Examples:
   gh prx list
   gh prx list --author "@me" --state all
   gh prx list --json
+  gh prx me
+  gh prx me --org AcmeCorp
   gh prx atm
   gh prx atm --org HemSoft
   gh prx atm --review-required
