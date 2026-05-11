@@ -84,7 +84,7 @@ func TestBuildDisplayPullRequestNormalizesFields(t *testing.T) {
 		t.Fatalf("expected pass checks, got %q", got.Checks)
 	}
 
-	if got.Branch != "feature/prx" {
+	if got.Branch != "prx" {
 		t.Fatalf("unexpected branch column %q", got.Branch)
 	}
 
@@ -357,8 +357,14 @@ func TestDetectAIReview(t *testing.T) {
 }
 
 func TestFormatBranch(t *testing.T) {
-	if got := formatBranch("feature/test"); got != "feature/test" {
-		t.Fatalf("expected 'feature/test', got %q", got)
+	if got := formatBranch("feature/test"); got != "test" {
+		t.Fatalf("expected 'test', got %q", got)
+	}
+	if got := formatBranch("dependabot/npm_and_yarn/lint-staged-17.0.4"); got != "lint-staged-17.0.4" {
+		t.Fatalf("expected 'lint-staged-17.0.4', got %q", got)
+	}
+	if got := formatBranch("main"); got != "main" {
+		t.Fatalf("expected 'main', got %q", got)
 	}
 	if got := formatBranch(""); got != "-" {
 		t.Fatalf("expected '-', got %q", got)

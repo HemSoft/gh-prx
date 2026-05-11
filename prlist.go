@@ -557,6 +557,9 @@ func formatBranch(head string) string {
 	if head == "" {
 		return "-"
 	}
+	if idx := strings.LastIndex(head, "/"); idx >= 0 {
+		return head[idx+1:]
+	}
 	return head
 }
 
