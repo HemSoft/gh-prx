@@ -15,4 +15,11 @@ Write-Host '--- build ---'
 $date = Get-Date -Format 'yyyy-MM-dd'
 go build -ldflags "-X main.version=$tag -X main.buildDate=$date" -o gh-prx.exe .
 
-Write-Host "`n✅ Ready — run: gh prx list"
+# Install into gh extension directory so `gh prx` uses the local build
+$extDir = Join-Path $env:LOCALAPPDATA 'GitHub CLI\extensions\gh-prx'
+if (Test-Path $extDir) {
+    Copy-Item gh-prx.exe (Join-Path $extDir 'gh-prx.exe') -Force
+    Write-Host "`n✅ Built & installed ($tag) — run: gh prx"
+} else {
+    Write-Host "`n✅ Built ($tag) — extension dir not found, run: gh extension install ."
+}
