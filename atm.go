@@ -18,6 +18,7 @@ import (
 type atmOptions struct {
 	org            string
 	limit          int
+	authored       bool
 	reviewRequired bool
 	json           bool
 }
@@ -47,8 +48,10 @@ func parseAtmOptions(args []string, stderr io.Writer) (atmOptions, error) {
 	flags.StringVar(&options.org, "o", "", "Organization to search (default: inferred from current repo)")
 	flags.IntVar(&options.limit, "limit", 30, "Maximum number of pull requests to fetch")
 	flags.IntVar(&options.limit, "L", 30, "Maximum number of pull requests to fetch")
-	flags.BoolVar(&options.reviewRequired, "review-required", false, "Show PRs where your review is requested")
-	flags.BoolVar(&options.reviewRequired, "r", false, "Show PRs where your review is requested")
+	flags.BoolVar(&options.authored, "authored", false, "Show PRs you authored (default: show PRs needing your review)")
+	flags.BoolVar(&options.authored, "a", false, "Show PRs you authored (default: show PRs needing your review)")
+	flags.BoolVar(&options.reviewRequired, "review-required", false, "Show only PRs where your review is directly requested")
+	flags.BoolVar(&options.reviewRequired, "r", false, "Show only PRs where your review is directly requested")
 	flags.BoolVar(&options.json, "json", false, "Output enriched JSON instead of a table")
 
 	if err := flags.Parse(args); err != nil {
@@ -77,12 +80,13 @@ const atmUsage = `Usage:
   gh prx atm [flags]
 
 Show open pull requests across an organization that need your attention.
-By default, shows PRs you authored. Use --review-required for PRs awaiting your review.
+By default, shows PRs needing your review. Use --authored for PRs you created.
 
 Flags:
   -o, --org string        Organization to search (default: inferred from current repo)
   -L, --limit int         Maximum number of pull requests to fetch (default 30)
-  -r, --review-required   Show PRs where your review is requested
+  -a, --authored          Show PRs you authored instead of PRs needing review
+  -r, --review-required   Show only PRs where your review is directly requested
       --json              Output enriched JSON instead of a table
 `
 
@@ -97,17 +101,37 @@ func executeAtm(options atmOptions, stdout io.Writer) error {
 		return fmt.Errorf("cannot determine current user: %w", err)
 	}
 
-	searchQuery := buildAtmSearchQuery(org, login, options.reviewRequired)
-	query := buildAtmGraphQLQuery(searchQuery, options.limit)
+	var nodes []atmPullRequestNode
 
-	stdoutBuf, _, err := gh.Exec("api", "graphql", "-f", fmt.Sprintf("query=%s", query))
-	if err != nil {
-		return fmt.Errorf("GraphQL search failed: %w", err)
-	}
-
-	nodes, err := parseAtmSearchResponse(stdoutBuf.Bytes())
-	if err != nil {
-		return err
+	if options.authored || options.reviewRequired {
+		searchQuery := buildAtmSearchQuery(org, login, options.reviewRequired)
+		query := buildAtmGraphQLQuery(searchQuery, options.limit)
+		stdoutBuf, _, execErr := gh.Exec("api", "graphql", "-f", fmt.Sprintf("query=%s", query))
+		if execErr != nil {
+			return fmt.Errorf("GraphQL search failed: %w", execErr)
+		}
+		nodes, err = parseAtmSearchResponse(stdoutBuf.Bytes())
+		if err != nil {
+			return err
+		}
+	} else {
+		queries := buildAtmNeedsReviewQueries(org, login)
+		query := buildAtmMultiSearchQuery(queries, options.limit)
+		stdoutBuf, _, execErr := gh.Exec("api", "graphql", "-f", fmt.Sprintf("query=%s", query))
+		if execErr != nil {
+			return fmt.Errorf("GraphQL search failed: %w", execErr)
+		}
+		nodes, err = parseAtmMultiSearchResponse(stdoutBuf.Bytes())
+		if err != nil {
+			return err
+		}
+		filtered := make([]atmPullRequestNode, 0, len(nodes))
+		for _, n := range nodes {
+			if !userApprovedPR(n, login) {
+				filtered = append(filtered, n)
+			}
+		}
+		nodes = filtered
 	}
 
 	now := time.Now().UTC()
@@ -155,11 +179,15 @@ func buildAtmSearchQuery(org, login string, reviewRequired bool) string {
 	return fmt.Sprintf("is:pr is:open author:%s org:%s", login, org)
 }
 
-func buildAtmGraphQLQuery(searchQuery string, limit int) string {
-	return fmt.Sprintf(`{
-  search(query: %q, type: ISSUE, first: %d) {
-    nodes {
-      ... on PullRequest {
+func buildAtmNeedsReviewQueries(org, login string) []string {
+	return []string{
+		fmt.Sprintf("is:pr is:open review-requested:%s org:%s", login, org),
+		fmt.Sprintf("is:pr is:open assignee:%s org:%s -author:%s", login, org, login),
+		fmt.Sprintf("is:pr is:open reviewed-by:%s org:%s", login, org),
+	}
+}
+
+const atmPRFieldsFragment = `
         number
         title
         author { login }
@@ -197,10 +225,37 @@ func buildAtmGraphQLQuery(searchQuery string, limit int) string {
           totalCount
           nodes { isResolved }
         }
+        approvedReviews: reviews(states: [APPROVED], last: 50) {
+          nodes {
+            author { login }
+          }
+        }`
+
+func buildAtmGraphQLQuery(searchQuery string, limit int) string {
+	return fmt.Sprintf(`{
+  search(query: %q, type: ISSUE, first: %d) {
+    nodes {
+      ... on PullRequest {%s
       }
     }
   }
-}`, searchQuery, limit)
+}`, searchQuery, limit, atmPRFieldsFragment)
+}
+
+func buildAtmMultiSearchQuery(queries []string, limit int) string {
+	var sb strings.Builder
+	sb.WriteString("{\n")
+	for i, q := range queries {
+		sb.WriteString(fmt.Sprintf(`  q%d: search(query: %q, type: ISSUE, first: %d) {
+    nodes {
+      ... on PullRequest {%s
+      }
+    }
+  }
+`, i, q, limit, atmPRFieldsFragment))
+	}
+	sb.WriteString("}")
+	return sb.String()
 }
 
 // atmPullRequestNode represents a PR returned from the GraphQL search query.
@@ -246,6 +301,13 @@ type atmPullRequestNode struct {
 			IsResolved bool `json:"isResolved"`
 		} `json:"nodes"`
 	} `json:"reviewThreads"`
+	ApprovedReviews struct {
+		Nodes []struct {
+			Author struct {
+				Login string `json:"login"`
+			} `json:"author"`
+		} `json:"nodes"`
+	} `json:"approvedReviews"`
 }
 
 func parseAtmSearchResponse(data []byte) ([]atmPullRequestNode, error) {
@@ -267,6 +329,57 @@ func parseAtmSearchResponse(data []byte) ([]atmPullRequestNode, error) {
 		return nil, fmt.Errorf("GraphQL error: %s", resp.Errors[0].Message)
 	}
 	return resp.Data.Search.Nodes, nil
+}
+
+func parseAtmMultiSearchResponse(data []byte) ([]atmPullRequestNode, error) {
+	var raw struct {
+		Data   map[string]json.RawMessage `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+		} `json:"errors"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("decode GraphQL response: %w", err)
+	}
+	if len(raw.Errors) > 0 {
+		return nil, fmt.Errorf("GraphQL error: %s", raw.Errors[0].Message)
+	}
+
+	seen := make(map[string]bool)
+	var result []atmPullRequestNode
+
+	for i := 0; ; i++ {
+		key := fmt.Sprintf("q%d", i)
+		v, ok := raw.Data[key]
+		if !ok {
+			break
+		}
+		var search struct {
+			Nodes []atmPullRequestNode `json:"nodes"`
+		}
+		if err := json.Unmarshal(v, &search); err != nil {
+			return nil, fmt.Errorf("failed to parse query q%d: %w", i, err)
+		}
+		for _, node := range search.Nodes {
+			prKey := fmt.Sprintf("%s#%d", node.Repository.NameWithOwner, node.Number)
+			if !seen[prKey] {
+				seen[prKey] = true
+				result = append(result, node)
+			}
+		}
+	}
+
+	return result, nil
+}
+
+func userApprovedPR(node atmPullRequestNode, login string) bool {
+	for _, r := range node.LatestReviews.Nodes {
+		if strings.EqualFold(r.Author.Login, login) && strings.EqualFold(r.State, "APPROVED") {
+			return true
+		}
+	}
+	return false
 }
 
 func mapAtmNode(node atmPullRequestNode, now time.Time) displayPullRequest {
@@ -317,13 +430,21 @@ func mapAtmNode(node atmPullRequestNode, now time.Time) displayPullRequest {
 		aiReview = "-"
 	}
 
+	// Count unique approvers from reviews(states: [APPROVED])
+	approverSet := make(map[string]bool)
+	for _, r := range node.ApprovedReviews.Nodes {
+		if r.Author.Login != "" {
+			approverSet[strings.ToLower(r.Author.Login)] = true
+		}
+	}
+
 	return displayPullRequest{
 		Number:    node.Number,
 		Title:     trimTitle(node.Title, 42),
 		Author:    authorName,
 		State:     normalizeState(node.State, node.IsDraft),
 		Review:    normalizeReviewDecision(node.ReviewDecision),
-		Approvals: countApprovalsFromNodes(aiNodes),
+		Approvals: len(approverSet),
 		Checks:    normalizeCheckState(checkItems),
 		Comments:  formatComments(threads),
 		AIReview:  aiReview,
@@ -346,18 +467,22 @@ func countApprovalsFromNodes(nodes []aiReviewNode) int {
 
 func renderAtmTable(stdout io.Writer, org, login string, options atmOptions, pullRequests []displayPullRequest) error {
 	if len(pullRequests) == 0 {
-		if options.reviewRequired {
+		if options.authored {
+			fmt.Fprintf(stdout, "No open PRs authored by %s in %s.\n", login, org)
+		} else if options.reviewRequired {
 			fmt.Fprintf(stdout, "No open PRs requesting review from %s in %s.\n", login, org)
 		} else {
-			fmt.Fprintf(stdout, "No open PRs authored by %s in %s.\n", login, org)
+			fmt.Fprintf(stdout, "No PRs needing review from %s in %s.\n", login, org)
 		}
 		return nil
 	}
 
-	if options.reviewRequired {
+	if options.authored {
+		fmt.Fprintf(stdout, "Open PRs by %s in %s\n\n", login, org)
+	} else if options.reviewRequired {
 		fmt.Fprintf(stdout, "PRs requesting review from %s in %s\n\n", login, org)
 	} else {
-		fmt.Fprintf(stdout, "Open PRs by %s in %s\n\n", login, org)
+		fmt.Fprintf(stdout, "PRs needing review from %s in %s\n\n", login, org)
 	}
 
 	colorEnabled := term.FromEnv().IsColorEnabled()

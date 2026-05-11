@@ -22,6 +22,9 @@ func TestParseAtmOptionsDefaults(t *testing.T) {
 	if options.reviewRequired {
 		t.Fatal("expected reviewRequired false")
 	}
+	if options.authored {
+		t.Fatal("expected authored false")
+	}
 	if options.json {
 		t.Fatal("expected json false")
 	}
@@ -256,6 +259,15 @@ func TestMapAtmNode(t *testing.T) {
 	}{
 		{IsResolved: true}, {IsResolved: false},
 	}
+	node.ApprovedReviews.Nodes = []struct {
+		Author struct {
+			Login string `json:"login"`
+		} `json:"author"`
+	}{
+		{Author: struct {
+			Login string `json:"login"`
+		}{Login: "reviewer1"}},
+	}
 
 	dp := mapAtmNode(node, now)
 
@@ -320,6 +332,17 @@ func TestMapAtmNodeNoChecks(t *testing.T) {
 func TestRenderAtmTableEmpty(t *testing.T) {
 	var buf bytes.Buffer
 	err := renderAtmTable(&buf, "HemSoft", "georufino", atmOptions{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "No PRs needing review from georufino in HemSoft") {
+		t.Fatalf("unexpected empty message: %q", buf.String())
+	}
+}
+
+func TestRenderAtmTableEmptyAuthored(t *testing.T) {
+	var buf bytes.Buffer
+	err := renderAtmTable(&buf, "HemSoft", "georufino", atmOptions{authored: true}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -425,5 +448,171 @@ func TestParseAtmSearchResponseGraphQLError(t *testing.T) {
 func TestRootUsageMentionsAtm(t *testing.T) {
 	if !strings.Contains(rootUsage, "atm") {
 		t.Fatal("root usage should mention atm subcommand")
+	}
+}
+
+func TestParseAtmOptionsAuthored(t *testing.T) {
+	var stderr bytes.Buffer
+	args := []string{"--authored"}
+	options, err := parseAtmOptions(args, &stderr)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !options.authored {
+		t.Fatal("expected authored true")
+	}
+}
+
+func TestParseAtmOptionsAuthoredShort(t *testing.T) {
+	var stderr bytes.Buffer
+	args := []string{"-a"}
+	options, err := parseAtmOptions(args, &stderr)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !options.authored {
+		t.Fatal("expected authored true with -a flag")
+	}
+}
+
+func TestBuildAtmNeedsReviewQueries(t *testing.T) {
+	queries := buildAtmNeedsReviewQueries("Relias", "fhemmer")
+	if len(queries) != 3 {
+		t.Fatalf("expected 3 queries, got %d", len(queries))
+	}
+	if !strings.Contains(queries[0], "review-requested:fhemmer") {
+		t.Fatalf("query 0 should contain review-requested, got %q", queries[0])
+	}
+	if !strings.Contains(queries[1], "assignee:fhemmer") || !strings.Contains(queries[1], "-author:fhemmer") {
+		t.Fatalf("query 1 should contain assignee and -author, got %q", queries[1])
+	}
+	if !strings.Contains(queries[2], "reviewed-by:fhemmer") {
+		t.Fatalf("query 2 should contain reviewed-by, got %q", queries[2])
+	}
+	for _, q := range queries {
+		if !strings.Contains(q, "org:Relias") {
+			t.Fatalf("query should contain org, got %q", q)
+		}
+	}
+}
+
+func TestBuildAtmMultiSearchQuery(t *testing.T) {
+	queries := []string{
+		"is:pr is:open review-requested:user org:Org",
+		"is:pr is:open assignee:user org:Org -author:user",
+	}
+	result := buildAtmMultiSearchQuery(queries, 10)
+	if !strings.Contains(result, "q0: search(") {
+		t.Fatal("expected q0 alias")
+	}
+	if !strings.Contains(result, "q1: search(") {
+		t.Fatal("expected q1 alias")
+	}
+	if !strings.Contains(result, "first: 10") {
+		t.Fatal("expected limit")
+	}
+	if !strings.Contains(result, "statusCheckRollup") {
+		t.Fatal("expected PR fields in multi-search query")
+	}
+	if !strings.Contains(result, "approvedReviews") {
+		t.Fatal("expected approvedReviews in multi-search query")
+	}
+}
+
+func TestParseAtmMultiSearchResponse(t *testing.T) {
+	data := []byte(`{
+		"data": {
+			"q0": {
+				"nodes": [
+					{"number": 1, "title": "PR1", "state": "OPEN", "repository": {"nameWithOwner": "Org/repo1"},
+					 "commits": {"nodes": []}, "latestReviews": {"nodes": []}, "reviewThreads": {"totalCount": 0, "nodes": []},
+					 "approvedReviews": {"nodes": []}}
+				]
+			},
+			"q1": {
+				"nodes": [
+					{"number": 1, "title": "PR1", "state": "OPEN", "repository": {"nameWithOwner": "Org/repo1"},
+					 "commits": {"nodes": []}, "latestReviews": {"nodes": []}, "reviewThreads": {"totalCount": 0, "nodes": []},
+					 "approvedReviews": {"nodes": []}},
+					{"number": 2, "title": "PR2", "state": "OPEN", "repository": {"nameWithOwner": "Org/repo2"},
+					 "commits": {"nodes": []}, "latestReviews": {"nodes": []}, "reviewThreads": {"totalCount": 0, "nodes": []},
+					 "approvedReviews": {"nodes": []}}
+				]
+			}
+		}
+	}`)
+	nodes, err := parseAtmMultiSearchResponse(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(nodes) != 2 {
+		t.Fatalf("expected 2 deduplicated nodes, got %d", len(nodes))
+	}
+	if nodes[0].Number != 1 || nodes[1].Number != 2 {
+		t.Fatalf("unexpected node order: #%d, #%d", nodes[0].Number, nodes[1].Number)
+	}
+}
+
+func TestParseAtmMultiSearchResponseError(t *testing.T) {
+	data := []byte(`{
+		"data": {},
+		"errors": [{"type": "FORBIDDEN", "message": "access denied"}]
+	}`)
+	_, err := parseAtmMultiSearchResponse(data)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "access denied") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestUserApprovedPR(t *testing.T) {
+	node := atmPullRequestNode{}
+	node.LatestReviews.Nodes = []struct {
+		State  string `json:"state"`
+		Author struct {
+			Login string `json:"login"`
+		} `json:"author"`
+		Comments struct {
+			TotalCount int `json:"totalCount"`
+		} `json:"comments"`
+	}{
+		{State: "APPROVED", Author: struct {
+			Login string `json:"login"`
+		}{Login: "reviewer1"}},
+		{State: "COMMENTED", Author: struct {
+			Login string `json:"login"`
+		}{Login: "myuser"}},
+	}
+
+	if userApprovedPR(node, "reviewer1") != true {
+		t.Fatal("expected reviewer1 to be detected as approved")
+	}
+	if userApprovedPR(node, "myuser") != false {
+		t.Fatal("expected myuser to NOT be detected as approved (state is COMMENTED)")
+	}
+	if userApprovedPR(node, "nobody") != false {
+		t.Fatal("expected unknown user to not be approved")
+	}
+}
+
+func TestUserApprovedPRCaseInsensitive(t *testing.T) {
+	node := atmPullRequestNode{}
+	node.LatestReviews.Nodes = []struct {
+		State  string `json:"state"`
+		Author struct {
+			Login string `json:"login"`
+		} `json:"author"`
+		Comments struct {
+			TotalCount int `json:"totalCount"`
+		} `json:"comments"`
+	}{
+		{State: "APPROVED", Author: struct {
+			Login string `json:"login"`
+		}{Login: "Reviewer1"}},
+	}
+	if !userApprovedPR(node, "reviewer1") {
+		t.Fatal("expected case-insensitive match")
 	}
 }
