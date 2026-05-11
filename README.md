@@ -32,7 +32,7 @@ Compared to `gh pr list`, this command keeps all existing filters but renders a 
 | Column   | Description |
 |----------|-------------|
 | **#**    | PR number — clickable link to the PR on GitHub (terminals with OSC 8 support) |
-| **Title**| Truncated to 56 chars |
+| **Title**| Truncated to 51 chars |
 | **Author**| PR author login |
 | **State**| `open`, `draft`, `closed`, or `merged` |
 | **Review**| Review decision: `approved`, `changes`, or `review` (pending) |
@@ -74,7 +74,7 @@ gh prx list --json
 
 ## Local development
 
-Requires Go 1.22+.
+Requires Go 1.23+.
 
 ```bash
 # Build and install locally (one-time symlink setup)
