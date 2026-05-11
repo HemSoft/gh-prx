@@ -71,7 +71,7 @@ var fetchReleasesFunc = fetchReleases
 
 func fetchReleases(limit int) ([]releaseEntry, error) {
 	stdoutBuf, stderrBuf, err := gh.Exec(
-		"api", fmt.Sprintf("repos/HemSoft/gh-prx/releases?per_page=%d", limit),
+		"api", fmt.Sprintf("repos/%s/%s/releases?per_page=%d", repoOwner, repoName, limit),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", stderrBuf.String(), err)
@@ -88,7 +88,7 @@ var fetchReleaseByTagFunc = fetchReleaseByTag
 
 func fetchReleaseByTag(tag string) (*releaseEntry, error) {
 	stdoutBuf, stderrBuf, err := gh.Exec(
-		"api", fmt.Sprintf("repos/HemSoft/gh-prx/releases/tags/%s", tag),
+		"api", fmt.Sprintf("repos/%s/%s/releases/tags/%s", repoOwner, repoName, tag),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", stderrBuf.String(), err)

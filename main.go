@@ -16,6 +16,12 @@ import (
 var version = "dev"
 var buildDate = ""
 
+// Change these two constants to move the extension to a different org.
+const (
+	repoOwner = "HemSoft"
+	repoName  = "gh-prx"
+)
+
 var errHelpDisplayed = errors.New("help displayed")
 
 func main() {
@@ -69,13 +75,13 @@ func run(args []string, stdout io.Writer, stderr io.Writer) error {
 }
 
 func printBanner(w io.Writer) {
-	fmt.Fprintf(w, "gh-prx %s by HemSoft\n", formatVersion(version, buildDate))
+	fmt.Fprintf(w, "%s %s by %s\n", repoName, formatVersion(version, buildDate), repoOwner)
 }
 
 func asyncUpdateCheck() <-chan string {
 	ch := make(chan string, 1)
 	go func() {
-		latest, err := fetchLatestReleaseFunc("HemSoft", "gh-prx")
+		latest, err := fetchLatestReleaseFunc(repoOwner, repoName)
 		if err == nil && latest != "" && latest != version {
 			ch <- latest
 		}
@@ -91,7 +97,7 @@ func showUpdateNotice(w io.Writer, ch <-chan string) {
 	select {
 	case latest, ok := <-ch:
 		if ok && latest != "" {
-			fmt.Fprintf(w, "↑ %s available · gh extension upgrade gh-prx\n", latest)
+			fmt.Fprintf(w, "↑ %s available · gh extension upgrade %s\n", latest, repoName)
 		}
 	case <-time.After(500 * time.Millisecond):
 	}
@@ -194,16 +200,12 @@ func fetchLatestRelease(owner, repo string) (string, error) {
 var fetchLatestReleaseFunc = fetchLatestRelease
 
 func runVersionTestable(w io.Writer, ver string) error {
-	const (
-		author     = "HemSoft"
-		repo       = "gh-prx"
-		installCmd = "gh extension install HemSoft/gh-prx"
-		upgradeCmd = "gh extension upgrade gh-prx"
-	)
+	installCmd := "gh extension install " + repoOwner + "/" + repoName
+	upgradeCmd := "gh extension upgrade " + repoName
 
-	fmt.Fprintf(w, "%s %s by %s · %s\n", repo, formatVersion(ver, buildDate), author, installCmd)
+	fmt.Fprintf(w, "%s %s by %s · %s\n", repoName, formatVersion(ver, buildDate), repoOwner, installCmd)
 
-	latest, err := fetchLatestReleaseFunc(author, repo)
+	latest, err := fetchLatestReleaseFunc(repoOwner, repoName)
 	if err != nil || latest == "" {
 		fmt.Fprintf(w, "⚠ Could not check for updates\n")
 		return nil
