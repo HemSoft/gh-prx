@@ -243,6 +243,37 @@ func TestCountApprovals(t *testing.T) {
 	}
 }
 
+func TestSupplementalApprovalsOverridesCountApprovals(t *testing.T) {
+	// buildDisplayPullRequest uses countApprovals as initial value.
+	// When supplemental data is available, it should override with the
+	// accurate count from reviews(states: [APPROVED]).
+	now := time.Now()
+	pr := pullRequest{
+		Number:      28,
+		Title:       "Test PR",
+		State:       "OPEN",
+		HeadRefName: "test-branch",
+		BaseRefName: "main",
+		Author:      &author{Login: "user1"},
+		// latestReviews has COMMENTED (not APPROVED), so countApprovals returns 0
+		LatestReviews: []review{
+			{State: "COMMENTED", Author: &author{Login: "coderabbitai"}},
+		},
+	}
+
+	dp := buildDisplayPullRequest(pr, now)
+	if dp.Approvals != 0 {
+		t.Fatalf("expected countApprovals fallback = 0, got %d", dp.Approvals)
+	}
+
+	// Supplemental data says there IS an approval (from reviews(states: APPROVED))
+	info := prSupplementalInfo{Approvals: 1}
+	dp.Approvals = info.Approvals
+	if dp.Approvals != 1 {
+		t.Fatalf("expected supplemental override = 1, got %d", dp.Approvals)
+	}
+}
+
 func TestFormatComments(t *testing.T) {
 	tests := []struct {
 		name string

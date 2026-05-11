@@ -290,6 +290,7 @@ func executeList(options listOptions, stdout io.Writer) error {
 			info := supplemental[pullRequest.Number]
 			dp.Comments = formatComments(info.Threads)
 			dp.AIReview = info.AIReview
+			dp.Approvals = info.Approvals
 			if dp.AIReview == "" {
 				dp.AIReview = "-"
 			}
@@ -615,8 +616,9 @@ type reviewThreadInfo struct {
 }
 
 type prSupplementalInfo struct {
-	Threads  reviewThreadInfo
-	AIReview string
+	Threads   reviewThreadInfo
+	AIReview  string
+	Approvals int
 }
 
 // aiReviewNode holds the fields needed to detect bot reviewer status.
@@ -777,7 +779,7 @@ func fetchPRSupplemental(owner, name string, prNumbers []int) (map[int]prSupplem
 	var queryParts []string
 	for _, num := range prNumbers {
 		queryParts = append(queryParts, fmt.Sprintf(
-			`pr%d: pullRequest(number: %d) { number reviewThreads(first: 100) { totalCount nodes { isResolved } } latestReviews(first: 50) { nodes { state author { login __typename } comments { totalCount } } } }`,
+			`pr%d: pullRequest(number: %d) { number reviewThreads(first: 100) { totalCount nodes { isResolved } } latestReviews(first: 50) { nodes { state author { login __typename } comments { totalCount } } } approvedReviews: reviews(states: [APPROVED], last: 50) { nodes { author { login } } } }`,
 			num, num,
 		))
 	}
@@ -823,6 +825,13 @@ func fetchPRSupplemental(owner, name string, prNumbers []int) (map[int]prSupplem
 					} `json:"comments"`
 				} `json:"nodes"`
 			} `json:"latestReviews"`
+			ApprovedReviews struct {
+				Nodes []struct {
+					Author struct {
+						Login string `json:"login"`
+					} `json:"author"`
+				} `json:"nodes"`
+			} `json:"approvedReviews"`
 		}
 		if err := json.Unmarshal(raw, &prData); err != nil {
 			continue
@@ -845,12 +854,21 @@ func fetchPRSupplemental(owner, name string, prNumbers []int) (map[int]prSupplem
 			})
 		}
 
+		// Count unique approvers from all APPROVED reviews (not just latest action)
+		approverSet := make(map[string]bool)
+		for _, r := range prData.ApprovedReviews.Nodes {
+			if r.Author.Login != "" {
+				approverSet[r.Author.Login] = true
+			}
+		}
+
 		result[prData.Number] = prSupplementalInfo{
 			Threads: reviewThreadInfo{
 				Total:    prData.ReviewThreads.TotalCount,
 				Resolved: resolved,
 			},
-			AIReview: detectAIReview(aiNodes),
+			AIReview:  detectAIReview(aiNodes),
+			Approvals: len(approverSet),
 		}
 	}
 
