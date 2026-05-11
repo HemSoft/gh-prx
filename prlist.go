@@ -376,7 +376,7 @@ func buildDisplayPullRequest(pullRequest pullRequest, now time.Time) displayPull
 
 	return displayPullRequest{
 		Number:    pullRequest.Number,
-		Title:     trimTitle(pullRequest.Title, 56),
+		Title:     trimTitle(pullRequest.Title, 51),
 		Author:    authorName,
 		State:     normalizeState(pullRequest.State, pullRequest.IsDraft),
 		Review:    normalizeReviewDecision(pullRequest.ReviewDecision),
