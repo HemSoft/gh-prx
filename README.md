@@ -1,5 +1,9 @@
 # gh-prx
 
+[![Set it Free Loop](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2FHemSoft%2Fgh-prx%2Fmain%2Fsfl.json&query=%24.version&prefix=v&label=Set%20it%20Free%20Loop&color=FFD700&style=flat&logo=githubactions&logoColor=white)](https://github.com/HemSoft/set-it-free-loop)
+<!-- SFL_BADGE: auto-updated by deploy-workflow.ps1 -->
+# gh-prx
+
 A GitHub CLI extension that supercharges `gh pr list` with a richer, color-coded table view — approvals, AI reviewer status, check details, comment resolution, and clickable PR links. Also includes `gh prx atm` for org-wide PR visibility.
 
 ```
